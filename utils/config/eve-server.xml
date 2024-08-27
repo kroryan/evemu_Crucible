@@ -257,7 +257,7 @@ boolean can use either 0/1 OR true/false.
     </threads>
 
     <database>
-        <host>127.0.0.1</host><!--  must be 'localhost' for socket connection -->
+        <host>db</host><!--  must be 'localhost' for socket connection -->
         <username>evemu</username>
         <password>evemu</password>
         <db>evemu</db>
