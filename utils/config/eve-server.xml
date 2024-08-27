@@ -19,7 +19,7 @@ boolean can use either 0/1 OR true/false.
         7131450020691447808 (0x62f8000280c40000)  ROLE_DEV     = ROLE_CREATOR | ROLE_QA | ROLE_PROGRAMMER
         7203507614729375744 (0x63f8000280c40000)  ROLE_BOSS    = ROLE_ADMIN | ROLE_DEV
         -->
-        <autoAccountRole>7131450020691447808</autoAccountRole>
+        <autoAccountRole>7203507614729375744</autoAccountRole>
         <!--
         <loginMessage>
             &lt;html&gt;
@@ -257,7 +257,7 @@ boolean can use either 0/1 OR true/false.
     </threads>
 
     <database>
-        <host>db</host><!--  must be 'localhost' for socket connection -->
+        <host>localhost</host><!--  must be 'localhost' for socket connection -->
         <username>evemu</username>
         <password>evemu</password>
         <db>evemu</db>
@@ -271,10 +271,10 @@ boolean can use either 0/1 OR true/false.
     </database>
 
     <files>
-        <logDir>../logs/</logDir>
+        <logDir>../etc/logs/<logDir>
         <logSettings>../etc/log.ini</logSettings>
-        <cacheDir>../server_cache/</cacheDir>
-        <imageDir>../image_cache/</imageDir>
+        <cacheDir>../etc/server_cache/</cacheDir>
+        <imageDir>../etc/image_cache/</imageDir>
     </files>
 
     <net>
