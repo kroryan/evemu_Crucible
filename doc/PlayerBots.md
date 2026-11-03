@@ -27,6 +27,13 @@ Existing enabled bot records are queued for staggered virtual login at one bot
 per second, and each brain applies a deterministic startup delay before its
 first autonomous action. This avoids a 60-ship undock/warp burst on server boot.
 
+At the first station visit, each role boards a persistent, fitted starter hull
+through `ItemFactory` and the regular active-ship path. MINER gets a Bantam,
+HAULER a Badger, MISSION_RUNNER a Kestrel, RAT_HUNTER a Merlin, TRADER a Condor,
+and INDUSTRIALIST an Osprey. The original Ibis and its fittings stay in the
+character's hangar. These are one-time starter assets; the upgrade does not
+create ISK or alter market orders.
+
 ## Real service lifecycle
 
 `BotManager` loads persisted records and virtual-logs them in after static data

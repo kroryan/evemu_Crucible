@@ -33,6 +33,7 @@ private:
     void ProcessAttack();
     bool IsMiningShipReady() const;
     bool IsCombatShipReady() const;
+    bool EnsureProfessionShip();
     bool SelectNpcTarget();
     void ReturnToHome();
 

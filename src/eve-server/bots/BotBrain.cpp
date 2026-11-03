@@ -98,6 +98,8 @@ void BotBrain::Process()
     }
     if (m_state == State::Manual)
         return;
+    if (m_state == State::Docked && m_client.IsDocked() && EnsureProfessionShip())
+        return;
     if (!m_manualMining && m_state != State::Attacking && m_state != State::Returning && now < m_autoStartAt)
         return;
     if (m_state == State::Attacking && m_record.profession != "RAT_HUNTER") {
@@ -148,6 +150,128 @@ bool BotBrain::IsCombatShipReady() const
             return true;
     }
     return false;
+}
+
+bool BotBrain::EnsureProfessionShip()
+{
+    const ShipItemRef currentShip = m_client.GetShip();
+    if (currentShip.get() == nullptr || currentShip->typeID() != 601 ||
+        m_client.GetStationID() == 0 || m_client.SystemMgr() == nullptr)
+        return false;
+
+    uint16 hullTypeID = 0;
+    std::vector<std::pair<uint16, EVEItemFlags> > loadout;
+    if (m_record.profession == "MINER") {
+        hullTypeID = 582; // Bantam
+        loadout.push_back({3651, flagHiSlot0}); // Civilian Miner
+        loadout.push_back({21857, flagMidSlot0}); // Civilian Afterburner
+    } else if (m_record.profession == "HAULER") {
+        hullTypeID = 648; // Badger
+        loadout.push_back({3651, flagHiSlot0}); // Civilian Miner for the real mining fallback
+        loadout.push_back({21855, flagLowSlot0}); // Civilian Expanded Cargohold
+    } else if (m_record.profession == "MISSION_RUNNER") {
+        hullTypeID = 602; // Kestrel
+        loadout.push_back({3651, flagHiSlot0}); // Civilian Miner while mission service work remains
+        loadout.push_back({32461, flagHiSlot1}); // Civilian Standard Missile Launcher
+    } else if (m_record.profession == "RAT_HUNTER") {
+        hullTypeID = 603; // Merlin
+        loadout.push_back({3638, flagHiSlot0}); // Civilian Gatling Railgun
+        loadout.push_back({21853, flagLowSlot0}); // Civilian Armor Repairer
+    } else if (m_record.profession == "TRADER") {
+        hullTypeID = 583; // Condor
+        loadout.push_back({21857, flagMidSlot0}); // Civilian Afterburner
+        loadout.push_back({21855, flagLowSlot0}); // Civilian Expanded Cargohold
+    } else if (m_record.profession == "INDUSTRIALIST") {
+        hullTypeID = 620; // Osprey
+        loadout.push_back({3651, flagHiSlot0}); // Civilian Miner
+        loadout.push_back({21855, flagLowSlot0}); // Civilian Expanded Cargohold
+    }
+    if (hullTypeID == 0)
+        return false;
+
+    StationItemRef station = m_client.SystemMgr()->GetStationFromInventory(m_client.GetStationID());
+    const ItemType* hullType = sItemFactory.GetType(hullTypeID);
+    if (station.get() == nullptr || hullType == nullptr)
+        return false;
+
+    Client* previousClient = sItemFactory.GetUsingClient();
+    sItemFactory.SetUsingClient(&m_client);
+    const auto restoreFactoryClient = [&]() {
+        if (previousClient != nullptr)
+            sItemFactory.SetUsingClient(previousClient);
+        else
+            sItemFactory.UnsetUsingClient();
+    };
+
+    try {
+        const uint32 characterID = m_client.GetCharacterID();
+        const uint32 stationID = m_client.GetStationID();
+        std::vector<InventoryItemRef> hangarItems;
+        station->GetMyInventory()->GetItemsByFlag(flagHangar, hangarItems);
+
+        ShipItemRef roleShip(nullptr);
+        for (const InventoryItemRef& item : hangarItems) {
+            if (item.get() == nullptr || item->ownerID() != characterID || item->typeID() != hullTypeID)
+                continue;
+            roleShip = sItemFactory.GetShipRef(item->itemID());
+            if (roleShip.get() != nullptr)
+                break;
+        }
+
+        if (roleShip.get() == nullptr) {
+            const std::string shipName = m_client.GetName() + std::string("'s ") + hullType->name();
+            ItemData shipData(hullTypeID, characterID, locTemp, flagNone, shipName.c_str());
+            roleShip = sItemFactory.SpawnShip(shipData);
+            if (roleShip.get() == nullptr) {
+                restoreFactoryClient();
+                return false;
+            }
+            roleShip->ChangeSingleton(true);
+            roleShip->Move(stationID, flagHangar);
+        }
+
+        for (const std::pair<uint16, EVEItemFlags>& fit : loadout) {
+            std::vector<InventoryItemRef> slotItems;
+            roleShip->GetMyInventory()->GetItemsByFlag(fit.second, slotItems);
+            bool fitted = false;
+            for (const InventoryItemRef& item : slotItems)
+                if (item.get() != nullptr && item->ownerID() == characterID && item->typeID() == fit.first) {
+                    fitted = true;
+                    break;
+                }
+            if (fitted)
+                continue;
+
+            if (sItemFactory.GetType(fit.first) == nullptr) {
+                restoreFactoryClient();
+                return false;
+            }
+            ItemData moduleData(fit.first, characterID, locTemp, flagNone);
+            InventoryItemRef module = sItemFactory.SpawnItem(moduleData);
+            if (module.get() == nullptr) {
+                restoreFactoryClient();
+                return false;
+            }
+            module->ChangeSingleton(true);
+            module->Move(roleShip->itemID(), fit.second);
+            module->SetAttribute(AttrOnline, EvilOne, false);
+            module->SaveItem();
+        }
+
+        roleShip->SaveShip();
+        // These seeded starter hulls are already in the hangar; SetShip uses
+        // the normal character active-ship path without sending a client RPC.
+        m_client.SetShip(roleShip);
+        restoreFactoryClient();
+        sLog.Green("PlayerBot", "%s boarded %s and fitted its starter modules.",
+                   m_client.GetName(), hullType->name());
+        return true;
+    } catch (...) {
+        restoreFactoryClient();
+        sLog.Warning("PlayerBot", "Could not install the %s starter hull for %s; will retry when docked.",
+                     hullType->name(), m_client.GetName());
+        return false;
+    }
 }
 
 bool BotBrain::SelectNpcTarget()
