@@ -39,7 +39,8 @@ public:
     bool Fleet(Client& leader, std::string& result);
     bool CorpInvite(uint32 corporationID, uint32 botID, std::string& result);
     bool Give(uint32 typeID, uint32 quantity, uint32 botID, std::string& result);
-    bool CreateCourierContract(uint32 botID, uint32 assigneeID, uint32 reward, std::string& result);
+    bool CreateCourierContract(uint32 botID, uint32 assigneeID, uint32 reward,
+                               uint32 destinationStationID, std::string& result);
     std::vector<ChatReply> HandleChat(Client& speaker, const std::string& message);
     std::string Status() const;
     Client* Find(uint32 characterID) const;

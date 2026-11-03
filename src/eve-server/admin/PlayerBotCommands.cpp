@@ -9,7 +9,7 @@
 PyResult Command_bot(Client* pClient, CommandDB* db, EVEServiceManager& services, const Seperator& args)
 {
     if (args.argCount() < 2)
-        return new PyString("Usage: /bot spawn <profession> <n> | status | order <botID|all> <follow|stay|dock|mine|attack> [targetID] | dismiss <characterID> | follow | come | stay | dock | mine | attack <entityID> [botID] | fleet | corp invite [corpID] [botID] | give <typeID> <quantity> [botID] | contract <botID> [assigneeID] [reward]");
+        return new PyString("Usage: /bot spawn <profession> <n> | status | order <botID|all> <follow|stay|dock|mine|attack> [targetID] | dismiss <characterID> | follow | come | stay | dock | mine | attack <entityID> [botID] | fleet | corp invite [corpID] [botID] | give <typeID> <quantity> [botID] | contract <botID> [assigneeID] [reward] [destinationStationID]");
 
     const std::string action = args.arg(1);
     std::string result;
@@ -142,22 +142,28 @@ PyResult Command_bot(Client* pClient, CommandDB* db, EVEServiceManager& services
         return new PyString(result);
     }
     if (action == "contract") {
-        if (args.argCount() < 3 || args.argCount() > 5 || !args.isNumber(2))
-            throw CustomError("Usage: /bot contract <botID> [assigneeID] [reward]");
+        if (args.argCount() < 3 || args.argCount() > 6 || !args.isNumber(2))
+            throw CustomError("Usage: /bot contract <botID> [assigneeID] [reward] [destinationStationID]");
         uint32 assigneeID = 0;
         uint32 reward = 0;
+        uint32 destinationStationID = 0;
         if (args.argCount() >= 4) {
             if (!args.isNumber(3))
                 throw CustomError("assigneeID must be numeric");
             assigneeID = static_cast<uint32>(strtoul(args.arg(3).c_str(), nullptr, 10));
         }
-        if (args.argCount() == 5) {
+        if (args.argCount() >= 5) {
             if (!args.isNumber(4))
                 throw CustomError("reward must be numeric");
             reward = static_cast<uint32>(strtoul(args.arg(4).c_str(), nullptr, 10));
         }
+        if (args.argCount() == 6) {
+            if (!args.isNumber(5))
+                throw CustomError("destinationStationID must be numeric");
+            destinationStationID = static_cast<uint32>(strtoul(args.arg(5).c_str(), nullptr, 10));
+        }
         sBotMgr.CreateCourierContract(static_cast<uint32>(strtoul(args.arg(2).c_str(), nullptr, 10)),
-                                      assigneeID, reward, result);
+                                      assigneeID, reward, destinationStationID, result);
         return new PyString(result);
     }
     throw CustomError("Unknown /bot action.");

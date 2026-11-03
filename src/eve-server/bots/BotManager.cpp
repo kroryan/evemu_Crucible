@@ -4,13 +4,20 @@
 #include "bots/BotBrain.h"
 #include "bots/BotClient.h"
 #include "Client.h"
+#include "contract/ContractProxy.h"
 #include "corporation/CorporationDB.h"
 #include "fleet/FleetService.h"
+#include "inventory/Inventory.h"
 #include "inventory/ItemFactory.h"
+#include "ship/Ship.h"
+#include "station/Station.h"
 #include "system/SystemManager.h"
+#include "services/ServiceManager.h"
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <limits>
 
 namespace PlayerBot {
 
@@ -375,7 +382,8 @@ bool BotManager::Give(uint32 typeID, uint32 quantity, uint32 botID, std::string&
     return true;
 }
 
-bool BotManager::CreateCourierContract(uint32 botID, uint32 assigneeID, uint32 reward, std::string& result)
+bool BotManager::CreateCourierContract(uint32 botID, uint32 assigneeID, uint32 reward,
+                                       uint32 destinationStationID, std::string& result)
 {
     std::map<uint32, std::unique_ptr<BotClient> >::iterator it = m_clients.find(botID);
     if (it == m_clients.end() || it->second->GetChar().get() == nullptr) {
@@ -383,53 +391,98 @@ bool BotManager::CreateCourierContract(uint32 botID, uint32 assigneeID, uint32 r
         return false;
     }
     BotClient& bot = *it->second;
-    if (!bot.IsDocked() || bot.GetStationID() == 0) {
+    if (!bot.IsDocked() || bot.GetStationID() == 0 || bot.GetShip().get() == nullptr) {
         result = "The bot must be docked at a station to issue a contract.";
         return false;
     }
-    if (reward > 0 && bot.GetBalance() < reward) {
-        result = "The bot cannot escrow that reward.";
+    ContractProxy* contractProxy = m_services == nullptr
+        ? nullptr : m_services->Lookup<ContractProxy>("contractProxy");
+    if (contractProxy == nullptr) {
+        result = "The standard contract service is unavailable.";
         return false;
     }
 
     const uint32 stationID = bot.GetStationID();
-    const uint32 systemID = sDataMgr.GetStationSystem(stationID);
-    const uint32 regionID = sDataMgr.GetStationRegion(stationID);
-    std::string title = "EVEMU PlayerBot courier contract";
-    std::string description = "Issued by a persistent PlayerBot using the normal contract table.";
-    std::string escapedTitle, escapedDescription;
-    sDatabase.DoEscapeString(escapedTitle, title);
-    sDatabase.DoEscapeString(escapedDescription, description);
-
-    if (reward > 0)
-        bot.AddBalance(-static_cast<double>(reward), Account::CreditType::ISK);
-
-    uint32 contractID = 0;
-    DBerror error;
-    const uint32 expireMinutes = 10080; // one week
-    if (!sDatabase.RunQueryLID(error, contractID,
-        "INSERT INTO ctrContracts "
-        "(contractType, issuerID, issuerCorpID, forCorp, isPrivate, assigneeID, "
-        "dateIssued, dateExpired, expireTimeInMinutes, duration, numDays, "
-        "startStationID, startSolarSystemID, startRegionID, endStationID, endSolarSystemID, endRegionID, "
-        "price, reward, collateral, title, description, issuerAllianceID, startStationDivision) "
-        "VALUES "
-        "(3, %u, %u, 0, %u, %u, %" PRIi64 ", %" PRIi64 ", %u, %u, %u, "
-        "%u, %u, %u, 0, %u, %u, 0, %u, 0, '%s', '%s', %u, 0)",
-        bot.GetCharacterID(), bot.GetCorporationID(), assigneeID != 0 ? 1 : 0, assigneeID,
-        static_cast<int64>(GetFileTimeNow()),
-        static_cast<int64>(GetRelativeFileTime(0, 0, expireMinutes)), expireMinutes,
-        expireMinutes, expireMinutes / 1440, stationID, systemID, regionID, systemID,
-        reward, escapedTitle.c_str(), escapedDescription.c_str(), bot.GetAllianceID())) {
-        if (reward > 0)
-            bot.AddBalance(static_cast<double>(reward), Account::CreditType::ISK);
-        result = "Contract creation failed: " + std::string(error.c_str());
+    if (destinationStationID == 0) {
+        DBQueryResult destinationResult;
+        const uint32 regionID = sDataMgr.GetStationRegion(stationID);
+        if (!sDatabase.RunQuery(destinationResult,
+                "SELECT stationID FROM staStations WHERE regionID=%u AND stationID<>%u ORDER BY stationID LIMIT 1",
+                regionID, stationID)) {
+            result = "Could not select a courier destination station.";
+            return false;
+        }
+        DBResultRow row;
+        if (!destinationResult.GetRow(row)) {
+            result = "No other station is available in the issuer's region.";
+            return false;
+        }
+        destinationStationID = row.GetUInt(0);
+    }
+    if (!sDataMgr.IsStation(destinationStationID) || destinationStationID == stationID) {
+        result = "The destination must be a different valid station.";
         return false;
     }
 
-    result = "Created courier contract " + std::to_string(contractID) +
-             " from " + bot.GetName() + ".";
-    return true;
+    const double cargoCapacity = bot.GetShip()->GetMyInventory()->GetCapacity(flagCargoHold);
+    if (cargoCapacity <= 0.0) {
+        result = "The issuer's ship has no courier cargo capacity.";
+        return false;
+    }
+
+    StationItemRef station = sItemFactory.GetStationRef(stationID);
+    if (station.get() == nullptr) {
+        result = "The issuer's station inventory is unavailable.";
+        return false;
+    }
+    std::vector<InventoryItemRef> hangarItems;
+    station->GetMyInventory()->GetItemsByFlag(flagHangar, hangarItems);
+
+    const double packageCapacity = std::min(cargoCapacity * 0.5, 20.0);
+    for (const InventoryItemRef& item : hangarItems) {
+        if (item.get() == nullptr || item->ownerID() != bot.GetCharacterID() ||
+            item->locationID() != stationID || item->quantity() == 0 ||
+            item->categoryID() != EVEDB::invCategories::Asteroid)
+            continue;
+
+        const double unitVolume = item->GetAttribute(AttrVolume).get_float();
+        if (unitVolume <= 0.0)
+            continue;
+        const uint32 maxPackageQuantity = static_cast<uint32>(std::floor(packageCapacity / unitVolume));
+        const uint32 quantity = std::min<uint32>(item->quantity(), maxPackageQuantity);
+        if (quantity == 0 || quantity > static_cast<uint32>(std::numeric_limits<int32>::max()))
+            continue;
+
+        InventoryItemRef package = item;
+        if (quantity < item->quantity()) {
+            package = item->Split(static_cast<int32>(quantity));
+            if (package.get() == nullptr)
+                continue;
+        }
+
+        const ItemType* type = sItemFactory.GetType(package->typeID());
+        if (type == nullptr)
+            continue;
+        const double collateralValue = std::ceil(type->basePrice() * quantity);
+        const uint32 collateral = static_cast<uint32>(std::min<double>(
+            std::max(0.0, collateralValue),
+            static_cast<double>(std::numeric_limits<int32>::max())));
+        uint32 contractID = 0;
+        std::string error;
+        if (!contractProxy->CreateBotCourierContract(bot, package->itemID(), quantity,
+                assigneeID, reward, collateral, destinationStationID, contractID, error)) {
+            result = "Courier contract creation failed: " + error;
+            return false;
+        }
+
+        result = "Created courier contract " + std::to_string(contractID) + " from " +
+            bot.GetName() + " with " + std::to_string(quantity) + " " + type->name() +
+            " to station " + std::to_string(destinationStationID) + ".";
+        return true;
+    }
+
+    result = "The bot needs an owned mineral stack small enough for its ship to issue a courier contract.";
+    return false;
 }
 
 std::vector<ChatReply> BotManager::HandleChat(Client& speaker, const std::string& message)

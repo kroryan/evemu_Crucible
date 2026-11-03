@@ -37,6 +37,11 @@
 
 #include "contract/ContractUtils.h"
 #include "account/AccountService.h"
+#include "inventory/ItemFactory.h"
+#include "inventory/InventoryItem.h"
+#include "Client.h"
+
+#include <limits>
 
 ContractProxy::ContractProxy () :
     Service("contractProxy")
@@ -70,6 +75,98 @@ ContractProxy::ContractProxy () :
             return self.contractSvc.DeleteNotification(contractID, forCorp)
             info = self.contractSvc.GetCourierContractFromItemID(itemID)
      */
+}
+
+bool ContractProxy::CreateBotCourierContract(Client& client, uint32 itemID, uint32 quantity,
+                                              uint32 assigneeID, uint32 reward, uint32 collateral,
+                                              uint32 destinationStationID, uint32& contractID,
+                                              std::string& error)
+{
+    contractID = 0;
+    error.clear();
+    const uint32 startStationID = client.GetStationID();
+    const uint32 maxContractInt = static_cast<uint32>(std::numeric_limits<int32>::max());
+    if (!client.IsDocked() || startStationID == 0) {
+        error = "The issuer must be docked at a station.";
+        return false;
+    }
+    if (!sDataMgr.IsStation(destinationStationID) || destinationStationID == startStationID) {
+        error = "The destination must be a different valid station.";
+        return false;
+    }
+    if (itemID == 0 || quantity == 0 || itemID > maxContractInt ||
+        quantity > maxContractInt || reward > maxContractInt || collateral > maxContractInt) {
+        error = "The contract item, quantity, reward, or collateral is outside the supported range.";
+        return false;
+    }
+    if (assigneeID == client.GetCharacterID()) {
+        error = "A courier contract cannot be assigned to its issuer.";
+        return false;
+    }
+    if (client.GetBalance() < reward) {
+        error = "The issuer cannot escrow that reward.";
+        return false;
+    }
+
+    InventoryItemRef item = sItemFactory.GetItemRef(itemID);
+    if (item.get() == nullptr || item->ownerID() != client.GetCharacterID() ||
+        item->locationID() != startStationID || item->quantity() != quantity) {
+        error = "The courier package must be an exact item stack owned by the issuer in its hangar.";
+        return false;
+    }
+
+    // Build the same named arguments and invoke the same CreateContract
+    // implementation used by ContractProxy RPCs. This preserves escrow,
+    // item ownership, ctrItems, volume and the normal contract metadata.
+    PyDict* namedArgs = new PyDict();
+    namedArgs->SetItemString("flag", new PyInt(static_cast<int32>(flagHangar)));
+    namedArgs->SetItemString("forCorp", new PyBool(false));
+    PyList* itemList = new PyList();
+    PyList* itemEntry = new PyList();
+    itemEntry->AddItemInt(static_cast<int32>(itemID));
+    itemEntry->AddItemInt(static_cast<int32>(quantity));
+    itemList->AddItem(itemEntry);
+    namedArgs->SetItemString("itemList", itemList);
+    namedArgs->SetItemString("requestItemTypeList", new PyList());
+    PyCallArgs call(&client, new PyTuple(0), namedArgs);
+    PySafeDecRef(namedArgs);
+
+    PyInt contractType(3); // courier
+    PyInt privateContract(assigneeID != 0 ? 1 : 0);
+    PyInt assignee(static_cast<int32>(assigneeID));
+    PyInt expiresInMinutes(10080);
+    PyInt deliveryDurationDays(7);
+    PyInt startStation(static_cast<int32>(startStationID));
+    PyInt destinationStation(static_cast<int32>(destinationStationID));
+    PyInt price(0);
+    PyInt rewardArg(static_cast<int32>(reward));
+    PyInt collateralArg(static_cast<int32>(collateral));
+    const std::string titleText = "EVEMU Bot courier contract";
+    const std::string descriptionText = std::string("Courier package issued by ") + client.GetName() + ".";
+    PyWString* title = new PyWString(titleText);
+    PyWString* description = new PyWString(descriptionText);
+
+    std::optional<PyInt*> assigneeArg;
+    if (assigneeID != 0)
+        assigneeArg = &assignee;
+    std::optional<PyInt*> destinationArg = &destinationStation;
+    PyResult response = CreateContract(call, &contractType, &privateContract, assigneeArg,
+                                       &expiresInMinutes, &deliveryDurationDays, &startStation,
+                                       destinationArg, &price, &rewardArg, &collateralArg,
+                                       title, description);
+    PySafeDecRef(title);
+    PySafeDecRef(description);
+    if (response.ssResult == nullptr || !response.ssResult->IsInt()) {
+        error = "The standard contract service rejected the courier contract.";
+        return false;
+    }
+
+    contractID = static_cast<uint32>(response.ssResult->AsInt()->value());
+    if (contractID == 0) {
+        error = "The standard contract service returned an invalid contract ID.";
+        return false;
+    }
+    return true;
 }
 
 PyResult ContractProxy::SearchContracts(PyCallArgs &call) {

@@ -29,10 +29,16 @@
 
 #include "services/Service.h"
 
+class Client;
+
 class ContractProxy : public Service <ContractProxy>
 {
 public:
     ContractProxy();
+    bool CreateBotCourierContract(Client& client, uint32 itemID, uint32 quantity,
+                                  uint32 assigneeID, uint32 reward, uint32 collateral,
+                                  uint32 destinationStationID, uint32& contractID,
+                                  std::string& error);
 
 protected:
     PyResult CreateContract(PyCallArgs &call, PyInt* contractType, PyBool* isPrivate, std::optional <PyNone*> assigneeID, PyInt* expireTime, PyInt* duration, PyInt* startStationID, std::optional<PyNone*> endStationID, PyInt* price, PyInt* reward, PyInt* collateral, PyString* title, PyString* description);

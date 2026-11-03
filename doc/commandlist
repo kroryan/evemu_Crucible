@@ -29,9 +29,11 @@ characters; they do not create simulated market or combat results.
   /bot give <typeID> <quantity> [botID]
       Create an item through ItemFactory and place it in the bot's real cargo
       or station hangar. This is intended for controlled administration.
-  /bot contract <botID> [assigneeID] [reward]
-      Create a persistent courier contract row from a docked bot; reward ISK
-      is escrowed from that bot's wallet and refunded if insertion fails.
+  /bot contract <botID> [assigneeID] [reward] [destinationStationID]
+      Create a courier contract through the standard ContractProxy using a
+      mineral stack from the bot's hangar that fits its ship. The bot escrows
+      any reward; if no destination is supplied, a station in the same region
+      is selected.
 
 Normal chat uses the configurable <playerbots><chatPrefix> (default `!`):
 `!follow`, `!stay`, `!dock`, `!mine`, `!attack <entityID>`, `!fleet`, and

@@ -73,7 +73,7 @@ All bot control uses one documented slash command (PROGRAMMER role):
 /bot fleet
 /bot corp invite [corporationID] [botID]
 /bot give <typeID> <quantity> [botID]
-/bot contract <botID> [assigneeID] [reward]
+/bot contract <botID> [assigneeID] [reward] [destinationStationID]
 ```
 
 `spawn` activates registered, offline records. Provisioning creates only the
@@ -86,6 +86,13 @@ restricted to targets already on the bot's grid. `fleet` creates the caller's
 normal fleet when needed and joins all online bots through `FleetService`.
 The `order` form can target one online bot by characterID or all online bots;
 for `mine`, its optional `targetID` is an asteroid typeID.
+
+`contract` selects a bot-owned mineral stack in its station hangar, splits it to
+fit within the issuer's ship capacity, then calls the same
+`ContractProxy::CreateContract` path as a client. It creates a courier package
+with a destination station, real cargo ownership, collateral and optional
+wallet-funded reward. If the destination is omitted, a different station in
+the same region is selected.
 
 ## Channel control
 
