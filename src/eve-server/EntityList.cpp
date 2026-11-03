@@ -38,6 +38,7 @@
 #include "map/MapDB.h"
 #include "market/MarketMgr.h"
 #include "market/MarketBotMgr.h"
+#include "bots/BotManager.h"
 #include "missions/MissionDataMgr.h"
 #include "station/Station.h"
 #include "system/DestinyManager.h"
@@ -226,6 +227,10 @@ void EntityList::Process() {
         for (auto cur : m_players)
             if (cur.second->IsValidSession())   // verify client is constructed before calling ProcessClient() on it
                 cur.second->ProcessClient();
+
+        // PlayerBots share the authoritative Client/session state and run once
+        // client state transitions have completed on the 1 Hz world tick.
+        sBotMgr.Process();
 
     /** @todo test for adding OpenMP here to enable MP per system. */
     // this wont work....possibility of removing systems, therefore invalidating the iterator.

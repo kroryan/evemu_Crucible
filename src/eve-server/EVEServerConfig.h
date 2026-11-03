@@ -149,6 +149,29 @@ public:
         float salesTax;
     } market;
 
+    // From <playerbots>.  Bots are disabled unless explicitly enabled in the
+    // server XML.  Provisioning is idempotent and only creates bot-prefixed
+    // accounts/characters.
+    struct {
+        bool enabled;
+        bool autoProvision;
+        uint16 maxBots;
+        uint16 cpuBudget;
+        uint16 respawnDelay;
+        uint16 minerCycleSeconds;
+        uint8 activeStartHour;
+        uint8 activeEndHour;
+        double bootstrapISK;
+        double maxISK;
+        std::string chatPrefix;
+        struct {
+            bool enabled;
+            std::string endpoint;
+            std::string apiKey;
+            std::string model;
+        } llm;
+    } playerbots;
+
     // From <ram>
     struct {
         bool AutoEvent;
@@ -349,6 +372,8 @@ protected:
     bool ProcessWorld( const TiXmlElement* ele );
     bool ProcessRates( const TiXmlElement* ele );
     bool ProcessMarket( const TiXmlElement* ele );
+    bool ProcessPlayerBots( const TiXmlElement* ele );
+    bool ProcessPlayerBotsLLM( const TiXmlElement* ele );
     bool ProcessAccount( const TiXmlElement* ele );
     bool ProcessCharacter( const TiXmlElement* ele );
     bool ProcessNPC( const TiXmlElement* ele );

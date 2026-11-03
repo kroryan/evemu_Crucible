@@ -71,6 +71,9 @@ class Client
 {
 public:
     Client(EVEServiceManager& services, EVETCPConnection** con);
+    // Used by server-controlled clients.  Such clients deliberately have no
+    // TCP connection, but otherwise use the exact same character/session path.
+    explicit Client(EVEServiceManager& services);
     // copy c'tor
     Client(const Client& oth) =delete;
     // move c'tor
@@ -119,6 +122,8 @@ public:
 
     int64 GetAccountRole() const                        { return pSession->GetCurrentLong( "role" ); }
     int64 GetClientID() const                           { return pSession->GetCurrentLong( "clientID" ); }
+    // Initializes the account half of a server-controlled (socketless) session.
+    void SetVirtualAccount(uint32 accountID, int64 role=Acct::Role::PLAYER);
     //int64 GetSessionID() const                          { return pSession->GetCurrentLong( "sessionID" ); }
 
     double GetCorpTaxRate()                             { return (m_char.get() != nullptr ? m_char->corpTaxRate() : 0.0); }

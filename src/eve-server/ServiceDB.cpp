@@ -136,6 +136,14 @@ bool ServiceDB::UpdateAccountHash( const char* username, std::string & hash )
     return true;
 }
 
+uint32 ServiceDB::CreateBotAccount(const char* login, int64 role)
+{
+    // The virtual session never authenticates over TCP.  The account still
+    // exists in the normal account table so wallet, corp and audit services
+    // treat it exactly like a player account.
+    return CreateNewAccount(login, "playerbot", "playerbot", role);
+}
+
 bool ServiceDB::IncrementLoginCount( uint32 accountID )
 {
     DBerror err;

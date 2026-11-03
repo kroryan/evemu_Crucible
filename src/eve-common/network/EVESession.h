@@ -62,9 +62,10 @@ public:
     virtual ~EVEClientSession();
 
     /** Wrapper of TCPConnection::GetState(). */
-    state_t GetState() const { return mNet->GetState(); }
+    state_t GetState() const { return mNet == nullptr ? TCPConnection::STATE_DISCONNECTED : mNet->GetState(); }
     /** Wrapper of TCPConnection::GetAddress(). */
-    std::string GetAddress() const { return mNet->GetAddress(); }
+    std::string GetAddress() const { return mNet == nullptr ? "virtual-bot" : mNet->GetAddress(); }
+    bool HasConnection() const { return mNet != nullptr; }
 
     /**
      * @brief Resets session.
@@ -90,7 +91,7 @@ public:
     /**
      * @brief Disconnects client from the server
      */
-    void CloseClientConnection() { mNet->Disconnect(); }
+    void CloseClientConnection() { if (mNet != nullptr) mNet->Disconnect(); }
 
 
 protected:

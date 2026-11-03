@@ -133,6 +133,7 @@
 #include "market/MarketMgr.h"
 #include "market/MarketProxyService.h"
 #include "market/MarketBotMgr.h"
+#include "bots/BotManager.h"
 // missions services
 #include "missions/MissionMgrService.h"
 // planet services
@@ -828,6 +829,11 @@ int main( int argc, char* argv[] )
     MapDB::SystemStartup();
     sLog.Green("       ServerInit", "Dynamic System Data Reset.");
 
+    // Characters and their systems are loaded only after static data is ready
+    // and stale online flags have been cleared.
+    sLog.Green("       ServerInit", "Starting PlayerBot Manager");
+    sBotMgr.Initialize(newSvcMgr);
+
     //sLog.Warning("server init", "Adding NPC Market Orders.");
     //NPCMarket::CreateNPCMarketFromFile("/etc/npcMarket.xml");
 
@@ -938,6 +944,8 @@ int main( int argc, char* argv[] )
     /* stop Image Server */
     sImageServer.Stop();
     sLog.Warning("   ServerShutdown", "Image Server stopped." );
+    sLog.Warning("   ServerShutdown", "Logging out PlayerBots.");
+    sBotMgr.Shutdown();
     /* Close the MarketMgr */
     sMktMgr.Close();
     /* Close the bulk data manager */
@@ -1044,6 +1052,8 @@ static void CleanUp() {
     /* stop Image Server */
     sImageServer.Stop();
     sLog.Warning("   ServerShutdown", "Image Server stopped." );
+    sLog.Warning("   ServerShutdown", "Logging out PlayerBots.");
+    sBotMgr.Shutdown();
     /* Close the MarketMgr */
     sLog.Warning("   ServerShutdown", "Shutting down Market Manager." );
     sMktMgr.Close();

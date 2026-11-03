@@ -42,6 +42,10 @@ class ServiceDB
 {
 public:
     static bool GetAccountInformation(CryptoChallengePacket& ccp, AccountData& aData, std::string& failMsg);
+    // Creates a server-owned account for a virtual PlayerBot.  Keeping this
+    // wrapper here makes bot provisioning use the same account/client-seed
+    // path as normal account creation without exposing bot credentials.
+    static uint32 CreateBotAccount(const char* login, int64 role);
     static bool UpdateAccountHash( const char* username, std::string &hash );
     static bool IncrementLoginCount(uint32 accountID );
     static void UpdatePassword(uint32 accountID, const char* pass);

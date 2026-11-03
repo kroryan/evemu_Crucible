@@ -48,6 +48,16 @@ SET( SOURCE
      "${TARGET_SOURCE_DIR}/StatisticMgr.cpp"
      "${TARGET_SOURCE_DIR}/DBCleaner.cpp")
 
+SET( bots_INCLUDE
+     "${TARGET_INCLUDE_DIR}/bots/BotClient.h"
+     "${TARGET_INCLUDE_DIR}/bots/BotBrain.h"
+     "${TARGET_INCLUDE_DIR}/bots/BotDB.h"
+     "${TARGET_INCLUDE_DIR}/bots/BotManager.h" )
+SET( bots_SOURCE
+     "${TARGET_SOURCE_DIR}/bots/BotBrain.cpp"
+     "${TARGET_SOURCE_DIR}/bots/BotDB.cpp"
+     "${TARGET_SOURCE_DIR}/bots/BotManager.cpp" )
+
 SET( account_INCLUDE
      "${TARGET_INCLUDE_DIR}/account/AccountDB.h"
      "${TARGET_INCLUDE_DIR}/account/AccountService.h"
@@ -81,6 +91,7 @@ SET( admin_INCLUDE
      "${TARGET_INCLUDE_DIR}/admin/DungeonCommands.h"
      "${TARGET_INCLUDE_DIR}/admin/GMCommands.h"
      "${TARGET_INCLUDE_DIR}/admin/PetitionerService.h"
+     "${TARGET_INCLUDE_DIR}/admin/PlayerBotCommands.h"
      "${TARGET_INCLUDE_DIR}/admin/SlashService.h"
      "${TARGET_INCLUDE_DIR}/admin/SystemCommands.h"
      "${TARGET_INCLUDE_DIR}/admin/CommandHelper.h" )
@@ -95,6 +106,7 @@ SET( admin_SOURCE
      "${TARGET_SOURCE_DIR}/admin/DungeonCommands.cpp"
      "${TARGET_SOURCE_DIR}/admin/GMCommands.cpp"
      "${TARGET_SOURCE_DIR}/admin/PetitionerService.cpp"
+     "${TARGET_SOURCE_DIR}/admin/PlayerBotCommands.cpp"
      "${TARGET_SOURCE_DIR}/admin/SlashService.cpp"
      "${TARGET_SOURCE_DIR}/admin/SystemCommands.cpp"
      "${TARGET_SOURCE_DIR}/admin/CommandHelper.cpp" )
@@ -721,6 +733,7 @@ SOURCE_GROUP( "src\\system\\test"  FILES ${test_SOURCE} )
 
 ADD_EXECUTABLE( "${TARGET_NAME}"
                 ${INCLUDE}                ${SOURCE}
+                ${bots_INCLUDE}           ${bots_SOURCE}
                 ${account_INCLUDE}        ${account_SOURCE}
                 ${admin_INCLUDE}          ${admin_SOURCE}
                 ${agent_INCLUDE}          ${agent_SOURCE}

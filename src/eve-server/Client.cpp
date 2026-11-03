@@ -134,6 +134,20 @@ Client::Client(EVEServiceManager& services, EVETCPConnection** con)
     Reset();
 }
 
+Client::Client(EVEServiceManager& services)
+: Client(services, nullptr)
+{
+}
+
+void Client::SetVirtualAccount(uint32 accountID, int64 role)
+{
+    pSession->SetInt("userid", accountID);
+    pSession->SetLong("role", role);
+    pSession->SetLong("clientID", 1000000L * accountID + 888444);
+    pSession->SetInt("userType", Acct::Type::Mammon);
+    pSession->SetString("address", "virtual-bot");
+}
+
 Client::~Client() {
     if (!m_loaded)
         return;

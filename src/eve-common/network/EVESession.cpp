@@ -36,10 +36,11 @@
 #include "EVEVersion.h"
 
 EVEClientSession::EVEClientSession(EVETCPConnection** n)
-: mNet(*n),
+: mNet(n == nullptr ? nullptr : *n),
 mPacketHandler(nullptr)
 {
-    *n = nullptr;
+    if (n != nullptr)
+        *n = nullptr;
 }
 
 EVEClientSession::~EVEClientSession() {
@@ -49,6 +50,11 @@ EVEClientSession::~EVEClientSession() {
 
 void EVEClientSession::Reset() {
     mPacketHandler = nullptr;
+
+    // Server controlled clients (PlayerBots) intentionally have no socket.
+    // They use the normal game objects but must never enter the TCP handshake.
+    if (mNet == nullptr)
+        return;
 
     if (GetState() != TCPConnection::STATE_CONNECTED)
         // Connection has been lost, there's no point in reset
@@ -67,6 +73,13 @@ void EVEClientSession::QueuePacket(PyPacket* packet) {
     if (packet == nullptr)
         return;
 
+    if (mNet == nullptr) {
+        // A virtual client has no recipient for visual/session notifications.
+        // The authoritative state has already been mutated by the caller.
+        delete packet;
+        return;
+    }
+
     PyRep* res(packet->Encode());
 
     if (res == nullptr) {
@@ -78,6 +91,8 @@ void EVEClientSession::QueuePacket(PyPacket* packet) {
 }
 
 PyPacket* EVEClientSession::PopPacket() {
+    if (mNet == nullptr)
+        return nullptr;
     PyRep* rep(mNet->PopRep());
     if (rep == nullptr)
         return nullptr;

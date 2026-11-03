@@ -19,7 +19,7 @@ boolean can use either 0/1 OR true/false.
         7131450020691447808 (0x62f8000280c40000)  ROLE_DEV     = ROLE_CREATOR | ROLE_QA | ROLE_PROGRAMMER
         7203507614729375744 (0x63f8000280c40000)  ROLE_BOSS    = ROLE_ADMIN | ROLE_DEV
         -->
-        <autoAccountRole>7131450020691447808</autoAccountRole>
+        <autoAccountRole>7203507614729375744</autoAccountRole>
         <!--
         <loginMessage>
             &lt;html&gt;
@@ -130,6 +130,21 @@ boolean can use either 0/1 OR true/false.
         <DeleteOldTransactions>false</DeleteOldTransactions><!-- bool  - delete transactions from db older than 3 days  default: false  -->
         <SalesTax>1.0</SalesTax><!-- float - the sales tax percentage -->
     </market>
+
+    <playerbots>
+        <enabled>true</enabled>
+        <autoProvision>true</autoProvision>
+        <maxBots>60</maxBots>
+        <cpuBudget>8</cpuBudget>
+        <respawnDelay>300</respawnDelay>
+        <minerCycleSeconds>300</minerCycleSeconds>
+        <activeStartHour>0</activeStartHour>
+        <activeEndHour>24</activeEndHour>
+        <bootstrapISK>5000000</bootstrapISK>
+        <maxISK>250000000</maxISK>
+        <chatPrefix>.</chatPrefix>
+        <llm><enabled>false</enabled><endpoint>http://localhost:11434/v1</endpoint><apiKey></apiKey><model></model></llm>
+    </playerbots>
 
     <!-- don't modify any of the following bpTimes settings - they are not fully debugged -->
     <bpTimes> <!-- these are multiplied to db values to get a modified result - < 1.0 = faster -->

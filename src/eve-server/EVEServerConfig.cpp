@@ -124,6 +124,22 @@ EVEServerConfig::EVEServerConfig()
     market.DeleteOldTransactions = false;
     market.salesTax = 1.0f;
 
+    playerbots.enabled = false;
+    playerbots.autoProvision = true;
+    playerbots.maxBots = 60;
+    playerbots.cpuBudget = 8;
+    playerbots.respawnDelay = 300;
+    playerbots.minerCycleSeconds = 300;
+    playerbots.activeStartHour = 0;
+    playerbots.activeEndHour = 24;
+    playerbots.bootstrapISK = 5000000.0;
+    playerbots.maxISK = 250000000.0;
+    playerbots.chatPrefix = ".";
+    playerbots.llm.enabled = false;
+    playerbots.llm.endpoint = "http://localhost:11434/v1";
+    playerbots.llm.apiKey = "";
+    playerbots.llm.model = "";
+
     // ram
     ram.AutoEvent = false;
     ram.ResME = 1.0;
@@ -278,6 +294,7 @@ bool EVEServerConfig::ProcessEveServer( const TiXmlElement* ele )
     AddMemberParser( "world",       &EVEServerConfig::ProcessWorld );
     AddMemberParser( "rates",       &EVEServerConfig::ProcessRates );
     AddMemberParser( "market",      &EVEServerConfig::ProcessMarket );
+    AddMemberParser( "playerbots",  &EVEServerConfig::ProcessPlayerBots );
     AddMemberParser( "ram",     &EVEServerConfig::ProcessBPTimes );
     AddMemberParser( "account",     &EVEServerConfig::ProcessAccount );
     AddMemberParser( "character",   &EVEServerConfig::ProcessCharacter );
@@ -302,6 +319,7 @@ bool EVEServerConfig::ProcessEveServer( const TiXmlElement* ele )
     RemoveParser( "world" );
     RemoveParser( "rates" );
     RemoveParser( "market" );
+    RemoveParser( "playerbots" );
     RemoveParser( "ram" );
     RemoveParser( "account" );
     RemoveParser( "character" );
@@ -500,6 +518,50 @@ bool EVEServerConfig::ProcessMarket(const TiXmlElement* ele)
     RemoveParser( "HistoryUpdateTime" );
     RemoveParser( "SalesTax" );
 
+    return result;
+}
+
+bool EVEServerConfig::ProcessPlayerBots(const TiXmlElement* ele)
+{
+    AddValueParser("enabled",            playerbots.enabled);
+    AddValueParser("autoProvision",      playerbots.autoProvision);
+    AddValueParser("maxBots",            playerbots.maxBots);
+    AddValueParser("cpuBudget",          playerbots.cpuBudget);
+    AddValueParser("respawnDelay",       playerbots.respawnDelay);
+    AddValueParser("minerCycleSeconds",  playerbots.minerCycleSeconds);
+    AddValueParser("activeStartHour",    playerbots.activeStartHour);
+    AddValueParser("activeEndHour",      playerbots.activeEndHour);
+    AddValueParser("bootstrapISK",       playerbots.bootstrapISK);
+    AddValueParser("maxISK",             playerbots.maxISK);
+    AddValueParser("chatPrefix",         playerbots.chatPrefix);
+    AddMemberParser("llm", &EVEServerConfig::ProcessPlayerBotsLLM);
+
+    const bool result = ParseElementChildren(ele);
+
+    RemoveParser("enabled");
+    RemoveParser("maxBots");
+    RemoveParser("cpuBudget");
+    RemoveParser("respawnDelay");
+    RemoveParser("minerCycleSeconds");
+    RemoveParser("activeStartHour");
+    RemoveParser("activeEndHour");
+    RemoveParser("maxISK");
+    RemoveParser("chatPrefix");
+    RemoveParser("llm");
+    return result;
+}
+
+bool EVEServerConfig::ProcessPlayerBotsLLM(const TiXmlElement* ele)
+{
+    AddValueParser("enabled",  playerbots.llm.enabled);
+    AddValueParser("endpoint", playerbots.llm.endpoint);
+    AddValueParser("apiKey",   playerbots.llm.apiKey);
+    AddValueParser("model",    playerbots.llm.model);
+    const bool result = ParseElementChildren(ele);
+    RemoveParser("enabled");
+    RemoveParser("endpoint");
+    RemoveParser("apiKey");
+    RemoveParser("model");
     return result;
 }
 

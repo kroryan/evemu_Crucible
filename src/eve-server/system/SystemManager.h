@@ -155,6 +155,10 @@ public:
     std::map<uint32, SystemEntity*> GetGates() { return m_gateMap; }
 
     SystemEntity* GetEntityByID(uint32 itemID) { return m_entities.find(itemID)->second; }
+    SystemEntity* FindEntityByID(uint32 itemID) {
+        std::map<uint32, SystemEntity*>::iterator it = m_entities.find(itemID);
+        return it == m_entities.end() ? nullptr : it->second;
+    }
 
     void GetClientList(std::vector<Client*>& cVec);
 
