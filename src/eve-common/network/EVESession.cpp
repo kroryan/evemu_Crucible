@@ -37,7 +37,8 @@
 
 EVEClientSession::EVEClientSession(EVETCPConnection** n)
 : mNet(n == nullptr ? nullptr : *n),
-mPacketHandler(nullptr)
+mPacketHandler(nullptr),
+mExtendedMachoPacketHeader(false)
 {
     if (n != nullptr)
         *n = nullptr;
@@ -80,6 +81,7 @@ void EVEClientSession::QueuePacket(PyPacket* packet) {
         return;
     }
 
+    packet->extendedHeader = mExtendedMachoPacketHeader;
     PyRep* res(packet->Encode());
 
     if (res == nullptr) {
@@ -231,6 +233,9 @@ PyPacket* EVEClientSession::_HandlePacket(PyRep* rep) {
         PySafeDecRef(rep);
         return PopPacket();
     }
+
+    // Match the client's packet envelope for replies and notifications.
+    mExtendedMachoPacketHeader = p->extendedHeader;
 
     //PySafeDecRef(rep);
     return p;

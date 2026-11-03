@@ -121,6 +121,8 @@ public:
     PyRep*      contextKey;
     std::string applicationID;
     std::string languageID;
+    // Crucible 7.31 uses seven MachoNet tuple fields; newer clients use nine.
+    bool extendedHeader;
 
 #if 0
     //options:

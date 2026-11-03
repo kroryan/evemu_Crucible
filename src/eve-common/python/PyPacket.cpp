@@ -67,7 +67,8 @@ payload(nullptr),
 named_payload(nullptr),
 contextKey(nullptr),
 applicationID(),
-languageID()
+languageID(),
+extendedHeader(false)
 {
 }
 
@@ -97,6 +98,7 @@ PyPacket *PyPacket::Clone() const
         res->contextKey = contextKey->Clone();
     res->applicationID = applicationID;
     res->languageID = languageID;
+    res->extendedHeader = extendedHeader;
     return res;
 }
 
@@ -175,6 +177,7 @@ bool PyPacket::Decode(PyRep **in_packet)
         PyDecRef(packet);
         return false;
     }
+    extendedHeader = tuple->items.size() == 9;
 
     if (!tuple->items[0]->IsInt()) {
         codelog(NET__PACKET_ERROR, "PyPacket::Decode() - First main tuple element is not an integer");
@@ -284,7 +287,7 @@ bool PyPacket::Decode(PyRep **in_packet)
 }
 
 PyRep *PyPacket::Encode() {
-    PyTuple *arg_tuple = new PyTuple(9);
+    PyTuple *arg_tuple = new PyTuple(extendedHeader ? 9 : 7);
     //command
     arg_tuple->items[0] = new PyInt(type);
     //source
@@ -307,26 +310,27 @@ PyRep *PyPacket::Encode() {
         arg_tuple->items[5] = named_payload;    // dont clone here.  set actual rep in item, and it will be cleaned up by d'tor later
     }
 
-    // contextKey, gives the client extra information on what exactly is going on
-    // this is PyNone almost 100% of the time and seems to be used in the node<->proxy communication
+    // The original MachoNet envelope also contains contextKey as field 7.
     if (contextKey == nullptr) {
         arg_tuple->items[6] = PyStatic.NewNone();
     } else {
         arg_tuple->items[6] = contextKey;
     }
 
-    // applicationID, used for routing
-    if (applicationID.empty()) {
-        arg_tuple->items[7] = PyStatic.NewNone();
-    } else {
-        arg_tuple->items[7] = new PyString(applicationID);
-    }
+    if (extendedHeader) {
+        // applicationID, used for routing.
+        if (applicationID.empty()) {
+            arg_tuple->items[7] = PyStatic.NewNone();
+        } else {
+            arg_tuple->items[7] = new PyString(applicationID);
+        }
 
-    // languageID
-    if (languageID.empty()) {
-        arg_tuple->items[8] = PyStatic.NewNone();
-    } else {
-        arg_tuple->items[8] = new PyString(languageID);
+        // languageID.
+        if (languageID.empty()) {
+            arg_tuple->items[8] = PyStatic.NewNone();
+        } else {
+            arg_tuple->items[8] = new PyString(languageID);
+        }
     }
 
     return new PyObject( type_string.c_str(), arg_tuple );
