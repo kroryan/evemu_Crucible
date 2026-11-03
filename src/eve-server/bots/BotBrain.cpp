@@ -264,12 +264,12 @@ bool BotBrain::EnsureProfessionShip()
         m_client.SetShip(roleShip);
         restoreFactoryClient();
         sLog.Green("PlayerBot", "%s boarded %s and fitted its starter modules.",
-                   m_client.GetName(), hullType->name());
+                   m_client.GetName(), hullType->name().c_str());
         return true;
     } catch (...) {
         restoreFactoryClient();
         sLog.Warning("PlayerBot", "Could not install the %s starter hull for %s; will retry when docked.",
-                     hullType->name(), m_client.GetName());
+                     hullType->name().c_str(), m_client.GetName());
         return false;
     }
 }
