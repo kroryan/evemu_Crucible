@@ -63,5 +63,12 @@ RUN cd /src/sql && ./get_evedbtool.sh
 EXPOSE 26000
 EXPOSE 26001
 
+# Preserve the existing non-root runtime contract used by Server Panel.
+RUN useradd evemu
+RUN chown -R evemu:evemu /app
+RUN chown -R evemu:evemu /src
+
+ENTRYPOINT ["/bin/sh", "/src/utils/container-scripts/entry.sh"]
+
 # Default command
 CMD ["/src/utils/container-scripts/start.sh"]
