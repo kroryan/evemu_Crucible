@@ -96,6 +96,10 @@ build_iwyu/
 staging/
 out/
 
+# Runtime configuration and Server Panel credentials are local state.
+config/
+.env
+
 # doxygen output
 doxygen/
 !doxygen/ChangeLog.md
