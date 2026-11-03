@@ -4,7 +4,9 @@
 #include "bots/BotBrain.h"
 #include "bots/BotClient.h"
 #include "Client.h"
+#include "corporation/CorporationDB.h"
 #include "fleet/FleetService.h"
+#include "inventory/ItemFactory.h"
 #include "system/SystemManager.h"
 
 #include <cctype>
@@ -168,6 +170,155 @@ bool BotManager::Fleet(Client& leader, std::string& result)
             ++joined;
     }
     result = "Fleet " + std::to_string(fleetID) + " now has " + std::to_string(joined) + " PlayerBot(s) added.";
+    return true;
+}
+
+bool BotManager::CorpInvite(uint32 corporationID, uint32 botID, std::string& result)
+{
+    if (!IsPlayerCorp(corporationID)) {
+        result = "The target corporation does not accept player membership.";
+        return false;
+    }
+
+    BotClient* bot = nullptr;
+    if (botID != 0) {
+        std::map<uint32, std::unique_ptr<BotClient> >::iterator it = m_clients.find(botID);
+        if (it != m_clients.end())
+            bot = it->second.get();
+    } else if (!m_clients.empty()) {
+        bot = m_clients.begin()->second.get();
+    }
+    if (bot == nullptr || bot->GetChar().get() == nullptr) {
+        result = "No online PlayerBot matches that corporation invite.";
+        return false;
+    }
+
+    CorpData data = bot->GetChar()->GetCorpData();
+    const uint32 oldCorp = data.corporationID;
+    data.corporationID = corporationID;
+    CorporationDB::GetCorpData(data);
+    data.baseID = data.corpHQ != 0 ? data.corpHQ : bot->GetStationID();
+    data.corpRole = Corp::Role::Member;
+    data.rolesAtAll = Corp::Role::Member;
+    data.rolesAtBase = Corp::Role::Member;
+    data.rolesAtHQ = Corp::Role::Member;
+    data.rolesAtOther = Corp::Role::Member;
+    data.grantableRoles = Corp::Role::Member;
+    data.grantableRolesAtBase = Corp::Role::Member;
+    data.grantableRolesAtHQ = Corp::Role::Member;
+    data.grantableRolesAtOther = Corp::Role::Member;
+    bot->GetChar()->JoinCorporation(data);
+    result = bot->GetName();
+    result += " joined corporation " + std::to_string(corporationID) +
+              " (previous corporation " + std::to_string(oldCorp) + ").";
+    return true;
+}
+
+bool BotManager::Give(uint32 typeID, uint32 quantity, uint32 botID, std::string& result)
+{
+    if (quantity == 0 || quantity > 1000000000U) {
+        result = "Quantity must be between 1 and 1000000000.";
+        return false;
+    }
+    if (typeID > UINT16_MAX) {
+        result = "Item typeID is outside the supported range.";
+        return false;
+    }
+    BotClient* bot = nullptr;
+    if (botID != 0) {
+        std::map<uint32, std::unique_ptr<BotClient> >::iterator it = m_clients.find(botID);
+        if (it != m_clients.end())
+            bot = it->second.get();
+    } else if (!m_clients.empty()) {
+        bot = m_clients.begin()->second.get();
+    }
+    if (bot == nullptr || bot->GetChar().get() == nullptr) {
+        result = "No online PlayerBot matches that item transfer.";
+        return false;
+    }
+    if (sItemFactory.GetType(static_cast<uint16>(typeID)) == nullptr) {
+        result = "Unknown item typeID.";
+        return false;
+    }
+
+    const bool inSpace = bot->IsInSpace() && bot->GetShip().get() != nullptr;
+    const uint32 destination = inSpace ? bot->GetShipID() : bot->GetStationID();
+    if (destination == 0) {
+        result = "The bot has no valid hangar or cargo destination.";
+        return false;
+    }
+    ItemData item(static_cast<uint16>(typeID), bot->GetCharacterID(), locTemp, flagNone, quantity);
+    sItemFactory.SetUsingClient(bot);
+    InventoryItemRef itemRef = sItemFactory.SpawnItem(item);
+    sItemFactory.UnsetUsingClient();
+    if (itemRef.get() == nullptr) {
+        result = "The server rejected that item creation.";
+        return false;
+    }
+    if (inSpace)
+        bot->GetShip()->AddItemByFlag(flagCargoHold, itemRef);
+    else
+        itemRef->Move(destination, flagHangar, true);
+    itemRef->SaveItem();
+    result = "Transferred " + std::to_string(quantity) + " x " +
+             std::to_string(typeID) + " to " + bot->GetName() + ".";
+    return true;
+}
+
+bool BotManager::CreateCourierContract(uint32 botID, uint32 assigneeID, uint32 reward, std::string& result)
+{
+    std::map<uint32, std::unique_ptr<BotClient> >::iterator it = m_clients.find(botID);
+    if (it == m_clients.end() || it->second->GetChar().get() == nullptr) {
+        result = "The contract issuer bot is not online.";
+        return false;
+    }
+    BotClient& bot = *it->second;
+    if (!bot.IsDocked() || bot.GetStationID() == 0) {
+        result = "The bot must be docked at a station to issue a contract.";
+        return false;
+    }
+    if (reward > 0 && bot.GetBalance() < reward) {
+        result = "The bot cannot escrow that reward.";
+        return false;
+    }
+
+    const uint32 stationID = bot.GetStationID();
+    const uint32 systemID = sDataMgr.GetStationSystem(stationID);
+    const uint32 regionID = sDataMgr.GetStationRegion(stationID);
+    std::string title = "EVEMU PlayerBot courier contract";
+    std::string description = "Issued by a persistent PlayerBot using the normal contract table.";
+    std::string escapedTitle, escapedDescription;
+    sDatabase.DoEscapeString(escapedTitle, title);
+    sDatabase.DoEscapeString(escapedDescription, description);
+
+    if (reward > 0)
+        bot.AddBalance(-static_cast<double>(reward), Account::CreditType::ISK);
+
+    uint32 contractID = 0;
+    DBerror error;
+    const uint32 expireMinutes = 10080; // one week
+    if (!sDatabase.RunQueryLID(error, contractID,
+        "INSERT INTO ctrContracts "
+        "(contractType, issuerID, issuerCorpID, forCorp, isPrivate, assigneeID, "
+        "dateIssued, dateExpired, expireTimeInMinutes, duration, numDays, "
+        "startStationID, startSolarSystemID, startRegionID, endStationID, endSolarSystemID, endRegionID, "
+        "price, reward, collateral, title, description, issuerAllianceID, startStationDivision) "
+        "VALUES "
+        "(3, %u, %u, 0, %u, %u, %" PRIi64 ", %" PRIi64 ", %u, %u, %u, "
+        "%u, %u, %u, 0, %u, %u, 0, %u, 0, '%s', '%s', %u, 0)",
+        bot.GetCharacterID(), bot.GetCorporationID(), assigneeID != 0 ? 1 : 0, assigneeID,
+        static_cast<int64>(GetFileTimeNow()),
+        static_cast<int64>(GetRelativeFileTime(0, 0, expireMinutes)), expireMinutes,
+        expireMinutes, expireMinutes / 1440, stationID, systemID, regionID, systemID,
+        reward, escapedTitle.c_str(), escapedDescription.c_str(), bot.GetAllianceID())) {
+        if (reward > 0)
+            bot.AddBalance(static_cast<double>(reward), Account::CreditType::ISK);
+        result = "Contract creation failed: " + std::string(error.c_str());
+        return false;
+    }
+
+    result = "Created courier contract " + std::to_string(contractID) +
+             " from " + bot.GetName() + ".";
     return true;
 }
 

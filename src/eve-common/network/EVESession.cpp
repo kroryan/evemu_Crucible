@@ -108,6 +108,28 @@ PyPacket* EVEClientSession::PopPacket() {
 
 PyPacket* EVEClientSession::_HandleVersion(PyRep* rep) {
     //we are waiting for their version information...
+    // Crucible clients in the wild use both the original bare six-element
+    // tuple and the later ObjectEx wrapper.  The version payload is stored in
+    // the ObjectEx header (args for type 2, second header item for type 1).
+    // Normalize it before handing ownership to the generated decoder so the
+    // MachoNet handshake remains compatible with both client generations.
+    if (rep != nullptr && rep->IsObjectEx()) {
+        PyObjectEx* object = rep->AsObjectEx();
+        PyRep* header = object->header();
+        if (header != nullptr && header->IsTuple()) {
+            PyTuple* headerTuple = header->AsTuple();
+            PyRep* candidate = nullptr;
+            if (object->isType2() && headerTuple->size() > 0)
+                candidate = headerTuple->GetItem(0);
+            else if (!object->isType2() && headerTuple->size() > 1)
+                candidate = headerTuple->GetItem(1);
+            if (candidate != nullptr && candidate->IsTuple()) {
+                PyIncRef(candidate);
+                PyDecRef(rep);
+                rep = candidate;
+            }
+        }
+    }
     VersionExchangeClient ve;
     if (!ve.Decode(&rep)) {
         sLog.Error("_HandleVersion", "%s: Received invalid version exchange!", GetAddress().c_str());

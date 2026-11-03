@@ -290,7 +290,7 @@ RefPtr<_Ty> InventoryItem::_LoadItem(uint32 itemID, const ItemType &type, const 
             // test for office first
             if (type.id() == 27) {
                 return StationOffice::_LoadItem<StationOffice>(itemID, type, data);
-            } else if (type.groupID() != EVEDB::invGroups::Station) {
+            } else if (type.groupID() == EVEDB::invGroups::Station) {
                 return StationItem::_LoadItem<StationItem>(itemID, type, data);
             }/* else if (type.groupID() != EVEDB::invGroups::Station_Services) {
                this isnt written yet...

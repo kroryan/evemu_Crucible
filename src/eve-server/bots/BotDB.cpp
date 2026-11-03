@@ -355,8 +355,11 @@ bool BotDB::Load(std::vector<Record>& records)
     records.clear();
     DBQueryResult result;
     if (!sDatabase.RunQuery(result,
-        "SELECT characterID, homeStationID, currentBeltID, respawnAt, enabled, profession, state, personality "
-        "FROM botCharacters WHERE enabled = 1 ORDER BY characterID")) {
+        "SELECT b.characterID, "
+        "COALESCE(NULLIF(b.homeStationID, 0), c.stationID), "
+        "b.currentBeltID, b.respawnAt, b.enabled, b.profession, b.state, b.personality "
+        "FROM botCharacters b JOIN chrCharacters c ON c.characterID=b.characterID "
+        "WHERE b.enabled = 1 ORDER BY b.characterID")) {
         sLog.Warning("PlayerBot", "botCharacters is unavailable (%s). PlayerBots remain inactive.", result.error.c_str());
         return false;
     }
@@ -384,8 +387,8 @@ bool BotDB::SaveState(const Record& record)
     sDatabase.DoEscapeString(state, record.state);
     sDatabase.DoEscapeString(profession, record.profession);
     return sDatabase.RunQuery(error,
-        "UPDATE botCharacters SET profession='%s', state='%s', currentBeltID=%u, respawnAt=%" PRIu64 " WHERE characterID=%u",
-        profession.c_str(), state.c_str(), record.currentBeltID, record.respawnAt, record.characterID);
+        "UPDATE botCharacters SET profession='%s', state='%s', homeStationID=%u, currentBeltID=%u, respawnAt=%" PRIu64 " WHERE characterID=%u",
+        profession.c_str(), state.c_str(), record.homeStationID, record.currentBeltID, record.respawnAt, record.characterID);
 }
 
 } // namespace PlayerBot

@@ -5,6 +5,7 @@
 #include "inventory/Inventory.h"
 #include "ship/Ship.h"
 #include "ship/modules/ModuleManager.h"
+#include "npc/NPC.h"
 #include "system/Asteroid.h"
 #include "system/DestinyManager.h"
 #include "system/SystemManager.h"
@@ -66,17 +67,23 @@ void BotBrain::Process()
             SetState(State::Docked);
         return;
     }
-    if (m_state == State::Attacking) {
+    if (m_state == State::Attacking && m_record.profession != "RAT_HUNTER") {
         ProcessAttack();
         return;
     }
-    // Professions start with specialised real skills.  Until their dedicated
-    // planner claims a job, mining is a safe productive fallback rather than
-    // fabricating mission or market outcomes.
-    if (m_record.profession == "MINER" || m_record.profession == "HAULER" ||
-        m_record.profession == "MISSION_RUNNER" || m_record.profession == "RAT_HUNTER" ||
-        m_record.profession == "TRADER" || m_record.profession == "INDUSTRIALIST")
-        ProcessMiner();
+    if (m_record.profession == "RAT_HUNTER") {
+        ProcessRatHunter();
+        return;
+    }
+    if (m_record.profession == "TRADER") {
+        ProcessTrader();
+        return;
+    }
+    // MINER is the complete production loop.  HAULER, MISSION_RUNNER and
+    // INDUSTRIALIST retain that real fallback until their service-specific
+    // planners have a job, so they never fabricate a mission or manufacture
+    // result.
+    ProcessMiner();
 }
 
 bool BotBrain::IsMiningShipReady() const
@@ -89,6 +96,123 @@ bool BotBrain::IsMiningShipReady() const
         if (module->groupID() == EVEDB::invGroups::Mining_Laser || module->groupID() == EVEDB::invGroups::Strip_Miner)
             return true;
     return false;
+}
+
+bool BotBrain::IsCombatShipReady() const
+{
+    if (m_client.GetShip().get() == nullptr || m_client.GetShip()->GetModuleManager() == nullptr)
+        return false;
+    std::vector<InventoryItemRef> modules;
+    m_client.GetShip()->GetMyInventory()->GetItemsByFlagRange(flagHiSlot0, flagHiSlot7, modules);
+    for (const InventoryItemRef& module : modules) {
+        if (module->type().HasEffect(EVEEffectID::targetAttack) ||
+            module->type().HasEffect(EVEEffectID::projectileFired) ||
+            module->type().HasEffect(EVEEffectID::missileLaunching))
+            return true;
+    }
+    return false;
+}
+
+bool BotBrain::SelectNpcTarget()
+{
+    if (m_client.SystemMgr() == nullptr)
+        return false;
+    const std::map<uint32, SystemEntity*> entities = m_client.SystemMgr()->GetEntities();
+    for (const auto& entry : entities) {
+        NPC* npc = dynamic_cast<NPC*>(entry.second);
+        if (npc == nullptr || npc->GetID() == m_client.GetShipID())
+            continue;
+        m_targetID = npc->GetID();
+        return true;
+    }
+    return false;
+}
+
+void BotBrain::ReturnToHome()
+{
+    if (m_record.homeStationID == 0 || m_client.GetShipSE() == nullptr)
+        return;
+    if (m_client.GetShipSE()->DestinyMgr()->IsWarping())
+        return;
+    SystemEntity* station = m_client.SystemMgr()->FindEntityByID(m_record.homeStationID);
+    if (station != nullptr) {
+        m_client.GetShipSE()->DestinyMgr()->WarpTo(station->GetPosition(), 0);
+        m_client.SetDockStationID(m_record.homeStationID);
+    }
+}
+
+void BotBrain::ProcessRatHunter()
+{
+    switch (m_state) {
+        case State::Docked:
+            if (!IsCombatShipReady())
+                return;
+            if (m_record.homeStationID == 0)
+                m_record.homeStationID = m_client.GetStationID();
+            m_client.UndockFromStation();
+            SetState(State::Undocking);
+            break;
+        case State::Undocking:
+            if (m_client.IsInSpace() && m_client.GetShipSE() != nullptr)
+                SetState(State::WarpToBelt);
+            break;
+        case State::WarpToBelt:
+            if (!m_client.IsInSpace() || m_client.GetShipSE() == nullptr)
+                return;
+            if (!m_client.GetShipSE()->DestinyMgr()->IsWarping())
+                WarpToBelt();
+            break;
+        case State::Mining:
+            if (m_client.GetShipSE() == nullptr || m_client.GetShipSE()->DestinyMgr()->IsWarping())
+                return;
+            if (m_targetID == 0 && SelectNpcTarget())
+                SetState(State::Attacking);
+            else if (m_targetID == 0 && GetFileTimeNow() - m_stateSince >= 60ULL * 10000000ULL)
+                SetState(State::Returning);
+            break;
+        case State::Attacking:
+            ProcessAttack();
+            if (m_targetID == 0)
+                SetState(State::Returning);
+            break;
+        case State::Returning:
+            ReturnToHome();
+            if (m_client.GetShipSE() != nullptr && !m_client.GetShipSE()->DestinyMgr()->IsWarping())
+                SetState(State::Selling);
+            break;
+        case State::Selling:
+            if (m_client.IsInSpace())
+                m_client.DockToStation();
+            if (m_client.IsDocked())
+                SetState(State::Docked);
+            break;
+        default:
+            break;
+    }
+}
+
+void BotBrain::ProcessTrader()
+{
+    if (!m_client.IsDocked()) {
+        RequestDock();
+        return;
+    }
+    if (m_record.homeStationID == 0)
+        m_record.homeStationID = m_client.GetStationID();
+    // Keep the cadence deliberately low: this is a real market settlement and
+    // must respect the one-Hz bot budget and wallet balance.
+    if (GetFileTimeNow() - m_stateSince < 60ULL * 10000000ULL)
+        return;
+    const uint32 quantity = 5;
+    const uint32 orderID = MarketDB::FindSellOrder(itemTypeTrit, m_record.homeStationID, quantity, 0.0);
+    if (orderID != 0) {
+        Market::OrderInfo order;
+        if (MarketDB::GetOrderInfo(orderID, order) &&
+            m_client.GetBalance() >= order.price * quantity)
+            sMktMgr.ExecuteSellOrder(&m_client, orderID, quantity, order.price,
+                                     m_record.homeStationID, itemTypeTrit, false);
+    }
+    m_stateSince = GetFileTimeNow();
 }
 
 void BotBrain::ProcessMiner()

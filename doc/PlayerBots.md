@@ -19,7 +19,7 @@ market settlement paths.
 `maxBots` defaults to 60. `cpuBudget` caps brains evaluated per one-Hz tick,
 so a large population is spread over ticks rather than stalling the world.
 
-## MVP miner lifecycle
+## Real service lifecycle
 
 `BotManager` loads persisted records and virtual-logs them in after static data
 is ready. The miner undocks through `Client`, selects a real belt, warps using
@@ -32,6 +32,13 @@ ownership remain server-authoritative and persistent.
 The existing `MarketBotMgr` remains untouched and can provide background buy
 orders. No market reseeding or deletion is performed by PlayerBots.
 
+`RAT_HUNTER` uses the same target manager and fitted weapon effects to select
+NPCs on-grid, engage them, and return to its home station. `TRADER` periodically
+settles a real sell order through `MarketMgr::ExecuteSellOrder`, subject to the
+bot wallet. `HAULER`, `MISSION_RUNNER`, and `INDUSTRIALIST` currently use the
+productive miner fallback until a route/agent/manufacturing job is available;
+they never fabricate mission, PI, industry, or market outcomes.
+
 ## Operations
 
 All bot control uses one documented slash command (PROGRAMMER role):
@@ -43,6 +50,9 @@ All bot control uses one documented slash command (PROGRAMMER role):
 /bot follow | come | stay | dock | mine
 /bot attack <target entityID>
 /bot fleet
+/bot corp invite [corporationID] [botID]
+/bot give <typeID> <quantity> [botID]
+/bot contract <botID> [assigneeID] [reward]
 ```
 
 `spawn` activates registered, offline records. Provisioning creates only the
@@ -77,7 +87,8 @@ fallback is deterministic and works with no LLM configured.
 
 Add a `BotBrain` profession handler under `bots/professions/`; the handler must
 drive public server services and `Client` methods, never write outcome rows
-directly. Persist only intent/state in `botCharacters`. Intended follow-ons are
-hauling, agent missions, ratting, industry and trade. LLM chatter belongs in a
-separate asynchronous queue and must never run game decisions or block the
-world tick.
+directly. Persist only intent/state in `botCharacters`. The migration and
+configuration already provide profession-specific skills and personality data.
+LLM chatter belongs in a separate asynchronous queue and must never run game
+decisions or block the world tick. Any future agent, PI, industry, or route
+planner should submit a real service job and let that service write the outcome.

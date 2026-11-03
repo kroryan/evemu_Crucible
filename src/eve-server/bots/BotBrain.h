@@ -24,12 +24,17 @@ public:
 private:
     void SetState(State state);
     void ProcessMiner();
+    void ProcessRatHunter();
+    void ProcessTrader();
     bool WarpToBelt();
     bool StartMining();
     void StopMining();
     void SellOre();
     void ProcessAttack();
     bool IsMiningShipReady() const;
+    bool IsCombatShipReady() const;
+    bool SelectNpcTarget();
+    void ReturnToHome();
 
     Client& m_client;
     Record& m_record;

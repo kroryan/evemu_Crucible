@@ -1904,8 +1904,19 @@ bool Client::IsHangarLoaded(uint32 hangarID) {
 
 void Client::LoadStationHangar(uint32 stationID) {
     _log(PLAYER__INFO, "Client::LoadStationHangar() is loading personal hangar for %s(%u) in stationID %u",  m_char->name(), m_char->itemID(), stationID);
+    if (m_system == nullptr) {
+        _log(PLAYER__ERROR, "Client::LoadStationHangar() cannot load station %u: no system manager.", stationID);
+        return;
+    }
+
+    StationItemRef station = m_system->GetStationFromInventory(stationID);
+    if (station.get() == nullptr || station->GetMyInventory() == nullptr) {
+        _log(PLAYER__ERROR, "Client::LoadStationHangar() cannot load station %u: station or inventory is unavailable.", stationID);
+        return;
+    }
+
     sItemFactory.SetUsingClient(this);
-    m_system->GetStationFromInventory(stationID)->GetMyInventory()->LoadContents();
+    station->GetMyInventory()->LoadContents();
     sItemFactory.UnsetUsingClient();
 }
 

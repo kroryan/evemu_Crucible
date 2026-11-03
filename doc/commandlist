@@ -1,0 +1,36 @@
+PlayerBot slash commands
+========================
+
+All PlayerBot commands require the PROGRAMMER role and are handled by the
+normal SlashService/CommandDispatcher path. They operate on persistent bot
+characters; they do not create simulated market or combat results.
+
+  /bot status
+      Show online bots and their persisted brain states.
+  /bot spawn <profession> <count>
+      Activate existing records for miner, hauler, mission_runner,
+      rat_hunter, trader, or industrialist (up to playerbots.maxBots).
+  /bot dismiss <characterID>
+      Log out one bot without deleting its character, wallet, ship, or items.
+  /bot follow | come | stay | dock | mine
+      Issue the corresponding real movement/operation order to online bots.
+  /bot attack <entityID>
+      Lock and engage an entity already on the bot grid using fitted modules.
+  /bot fleet
+      Create/use the caller's normal fleet and invite online bots.
+  /bot corp invite [corporationID] [botID]
+      Move a bot into a player corporation through the normal Character corp
+      membership path. With no IDs, the caller's corporation and first bot are
+      used.
+  /bot give <typeID> <quantity> [botID]
+      Create an item through ItemFactory and place it in the bot's real cargo
+      or station hangar. This is intended for controlled administration.
+  /bot contract <botID> [assigneeID] [reward]
+      Create a persistent courier contract row from a docked bot; reward ISK
+      is escrowed from that bot's wallet and refunded if insertion fails.
+
+Normal chat uses the configurable <playerbots><chatPrefix> (default `!`):
+`!follow`, `!stay`, `!dock`, `!mine`, `!attack <entityID>`, `!fleet`, and
+`!status`. Mentioning a bot by name in local, corporation, fleet, or private
+chat produces a deterministic acknowledgement when optional LLM chatter is
+disabled.

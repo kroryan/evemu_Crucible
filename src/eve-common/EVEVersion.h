@@ -37,12 +37,14 @@
 // Client version info
 // supported client is Crucible v1.6.5 build 360229
 // this is ALL CPP information needed by the client
-static const double EVEVersionNumber = 14.08;
-static const uint16 MachoNetVersion = 425;
-static const int32 EVEBuildVersion = 1082510;
-static const char* const EVEProjectRegion = "optic";
-static const char* const EVEProjectVersion = "EVE-SERENITY@optic";
-static const char* const EVEProjectCodename = "EVE-SERENITY";
+// Keep the wire handshake on the Crucible 7.31 client used by this server.
+// Newer upstream protocol constants are not compatible with this client.
+static const double EVEVersionNumber = 7.31;
+static const uint16 MachoNetVersion = 320;
+static const int32 EVEBuildVersion = 360229;
+static const char* const EVEProjectRegion = "ccp";
+static const char* const EVEProjectVersion = "EVE-EVE-TRANQUILITY@ccp";
+static const char* const EVEProjectCodename = "EVE-EVE-TRANQUILITY";
 
 static const int32 EVEBirthday = 170472;
 

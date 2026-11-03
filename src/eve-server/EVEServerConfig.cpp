@@ -553,12 +553,14 @@ bool EVEServerConfig::ProcessPlayerBots(const TiXmlElement* ele)
     const bool result = ParseElementChildren(ele);
 
     RemoveParser("enabled");
+    RemoveParser("autoProvision");
     RemoveParser("maxBots");
     RemoveParser("cpuBudget");
     RemoveParser("respawnDelay");
     RemoveParser("minerCycleSeconds");
     RemoveParser("activeStartHour");
     RemoveParser("activeEndHour");
+    RemoveParser("bootstrapISK");
     RemoveParser("maxISK");
     RemoveParser("chatPrefix");
     RemoveParser("llm");
