@@ -71,6 +71,53 @@ MarketProxyService::MarketProxyService(EVEServiceManager& mgr) :
     this->Add("GetCorporationOrders", &MarketProxyService::GetCorporationOrders);
 }
 
+bool MarketProxyService::PlaceBotLimitOrder(Client& client, uint32 stationID, uint32 typeID,
+                                            double price, uint32 quantity, bool bid,
+                                            uint32 itemID, uint8 duration)
+{
+    if (!client.IsDocked() || client.GetStationID() != stationID || typeID == 0 ||
+        quantity == 0 || price <= 0.0 || duration == 0 ||
+        (bid && itemID != 0) || (!bid && itemID == 0))
+        return false;
+
+    const double notional = price * quantity;
+    const double requiredBalance = notional * (bid ? 1.10 : 0.05);
+    if (client.GetBalance() < requiredBalance)
+        return false;
+
+    // A bot may keep one standing order per item and side. This check makes
+    // retries idempotent and keeps unattended trading from accumulating orders.
+    if (MarketDB::FindOwnerOrder(client.GetCharacterID(), stationID, typeID, bid) != 0)
+        return false;
+
+    // Route virtual traders through the same character-order implementation as
+    // MarketProxy.PlaceCharOrder. That path performs wallet, item, fee, escrow,
+    // transaction, cache and notification handling.
+    PyDict* namedArgs = new PyDict();
+    PyCallArgs call(&client, new PyTuple(0), namedArgs);
+    PySafeDecRef(namedArgs);
+    PyInt stationArg(static_cast<int32>(stationID));
+    PyInt typeArg(static_cast<int32>(typeID));
+    PyFloat priceArg(price);
+    PyInt quantityArg(static_cast<int32>(quantity));
+    PyInt bidArg(bid ? 1 : 0);
+    PyInt rangeArg(0);
+    PyInt itemArg(static_cast<int32>(itemID));
+    PyInt minVolumeArg(1);
+    PyInt durationArg(duration);
+    PyBool useCorpArg(false);
+
+    std::optional<PyInt*> item;
+    if (!bid)
+        item = &itemArg;
+
+    (void)PlaceCharOrder(call, &stationArg, &typeArg, &priceArg, &quantityArg,
+                         &bidArg, &rangeArg, item, &minVolumeArg, &durationArg,
+                         &useCorpArg, std::nullopt);
+
+    return MarketDB::FindOwnerOrder(client.GetCharacterID(), stationID, typeID, bid) != 0;
+}
+
 PyResult MarketProxyService::GetMarketGroups(PyCallArgs &call) {
     return sMktMgr.GetMarketGroups();
 }

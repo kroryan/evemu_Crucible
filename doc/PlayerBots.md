@@ -41,9 +41,15 @@ The existing `MarketBotMgr` remains untouched and can provide background buy
 orders. No market reseeding or deletion is performed by PlayerBots.
 
 `RAT_HUNTER` uses the same target manager and fitted weapon effects to select
-NPCs on-grid, engage them, and return to its home station. `TRADER` periodically
-settles a real sell order through `MarketMgr::ExecuteSellOrder`, subject to the
-bot wallet. `HAULER`, `MISSION_RUNNER`, and `INDUSTRIALIST` currently use the
+NPCs on-grid, engage them, and return to its home station. `TRADER` places real
+character buy and sell orders through `MarketProxyService::PlaceCharOrder`.
+Buy escrow and fees use its wallet, sell orders consume ore from its hangar, and
+miners can fill trader bids through `MarketMgr::ExecuteBuyOrder`. Each bot keeps
+at most one order per item and side, caps bid escrow to a small share of its
+wallet, and respects the configured wealth headroom when selling. This loop
+still needs live fill and restart verification after deployment.
+
+`HAULER`, `MISSION_RUNNER`, and `INDUSTRIALIST` currently use the
 productive miner fallback until a route/agent/manufacturing job is available;
 they never fabricate mission, PI, industry, or market outcomes.
 

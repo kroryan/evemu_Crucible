@@ -14,17 +14,21 @@ funcional.
 
 ## Estado actual observado
 
-Ya hay cuentas y personajes dedicados, login virtual, persistencia básica, un
-ciclo MINER, conducta simple de RAT_HUNTER y TRADER, comandos `/bot`, órdenes por
-prefijo, alta en flota/corporación, contratos de mensajería y chatter opcional.
-La configuración permite hasta 60 bots. La creación ya puede dar ISK inicial,
-skills y fitting básico sin pasar por el tutorial de un jugador.
+Hay cuentas y personajes dedicados, login virtual, skills, naves e inventario
+persistentes, minería real, combate simple de RAT_HUNTER, comandos `/bot`, alta
+en flota/corporación y chatter opcional. El scheduler reparte turnos con cursor
+round-robin, escalona el login a un bot por segundo y aplica retardo inicial
+determinista. Los bots se suscriben a Local por el camino normal de LSC.
 
-Hay bloqueos funcionales: HAULER, MISSION_RUNNER e INDUSTRIALIST todavía usan el
-fallback minero; TRADER solo cruza ofertas existentes; contratos usan SQL
-directo; el horario y el límite de riqueza se configuran pero no se aplican al
-ciclo; el presupuesto procesa siempre los primeros bots por ID; y el brain
-vuelve a posponer `respawnAt` mientras el bot está en cápsula.
+La última observación del servidor encontró 60 cuentas/personajes/sesiones y
+60 naves propias; 90 pilas de mineral de bots persistían en `entity`. El checkout
+actual añade órdenes de mercado por cuentas TRADER reales y fills parciales de
+minerales. Aún falta desplegar y verificar ese ciclo de compra, venta y reinicio.
+
+Siguen pendientes HAULER, MISSION_RUNNER e INDUSTRIALIST reales (hoy usan el
+fallback minero), PI, contratos por el servicio normal y el límite global de
+riqueza y los horarios. La DB activa no tiene `qstEncounter`, así que las
+misiones no se pueden validar con los datos actuales.
 
 ## Reglas de compatibilidad y datos
 
@@ -47,13 +51,13 @@ vuelve a posponer `respawnAt` mientras el bot está en cápsula.
 
 ### 0. Retirar #323 y recuperar el login completo
 
-- [ ] Revertir #323 conservando los cambios propios de bots y los fixes de
+- [x] Revertir #323 conservando los cambios propios de bots y los fixes de
   compatibilidad Crucible que sigan siendo necesarios.
-- [ ] Compilar y reconstruir la imagen del servidor; desplegar solo
+- [x] Compilar y reconstruir la imagen del servidor; desplegar solo
   `evemu-server`, sin recrear ni reiniciar la DB.
 - [ ] Validar login, lista, selección, `checking navigation systems`, carga del
   mundo y logout con Crucible 7.31.
-- [ ] Confirmar MachoNet 320 en logs y revisar las llamadas de servicio que el
+- [x] Confirmar MachoNet 320 en logs y revisar las llamadas de servicio que el
   cliente hace tras seleccionar el personaje.
 
 **Salida:** el jugador entra al mundo en una sesión nueva y se conservan los
@@ -61,9 +65,9 @@ datos de DB y market existentes.
 
 ### 1. Estabilizar 40–60 bots
 
-- [ ] Repartir el presupuesto con cursor round-robin y límite de acciones/tiempo
+- [x] Repartir el presupuesto con cursor round-robin y límite de acciones/tiempo
   para que ningún bot de ID alto quede sin procesar.
-- [ ] Escalonar login virtual y primer movimiento para evitar una oleada de
+- [x] Escalonar login virtual y primer movimiento para evitar una oleada de
   entidades y warps al arrancar con 60 bots.
 - [ ] Corregir muerte y respawn: fijar `respawnAt` una sola vez; usar clone,
   cápsula y rookie ship del flujo normal; no reembolsar pérdidas.
@@ -102,6 +106,9 @@ coherentes en cliente y DB.
 - [ ] Refinar solo mediante el servicio de refinado, con sus costes e impuestos.
 - [ ] Completar TRADER con órdenes reales colocadas/canceladas vía `MarketMgr`,
   fills, wallet, tasas e historial; comprar naves, módulos y munición reales.
+- [x] Añadir colocación de bids/asks TRADER por `MarketProxyService`, usando el
+  mismo `PlaceCharOrder` de los clientes, escrow/comisión reales y órdenes
+  respaldadas por wallet o inventario; permitir fills parciales de mineral.
 - [ ] Integrar `MarketBotMgr` como maker de fondo, sin resetear órdenes existentes.
 - [ ] Aplicar `maxISK` a ingresos y transferencias. Las únicas fuentes serán
   bootstrap limitado, bounties, recompensas reales y ventas liquidadas.

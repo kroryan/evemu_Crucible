@@ -55,6 +55,7 @@ public:
 
     static uint32 FindBuyOrder(uint32 typeID, uint32 stationID, uint32 quantity, double price);
     static uint32 FindSellOrder(uint32 typeID, uint32 stationID, uint32 quantity, double price);
+    static uint32 FindOwnerOrder(uint32 ownerID, uint32 stationID, uint32 typeID, bool bid);
     static uint32 StoreOrder(Market::SaveData& data);
 
 

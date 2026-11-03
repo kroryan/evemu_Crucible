@@ -247,6 +247,28 @@ uint32 MarketDB::FindSellOrder(uint32 typeID, uint32 stationID, uint32 quantity,
     return 0;
 }
 
+uint32 MarketDB::FindOwnerOrder(uint32 ownerID, uint32 stationID, uint32 typeID, bool bid)
+{
+    DBQueryResult res;
+    if (!sDatabase.RunQuery(res,
+        "SELECT orderID"
+        " FROM mktOrders"
+        " WHERE ownerID=%u"
+        "  AND stationID=%u"
+        "  AND typeID=%u"
+        "  AND bid=%u"
+        " ORDER BY orderID DESC"
+        " LIMIT 1;",
+        ownerID, stationID, typeID, bid ? 1 : 0))
+    {
+        codelog(MARKET__DB_ERROR, "Error in query: %s", res.error.c_str());
+        return 0;
+    }
+
+    DBResultRow row;
+    return res.GetRow(row) ? row.GetUInt(0) : 0;
+}
+
 bool MarketDB::GetOrderInfo(uint32 orderID, Market::OrderInfo &oInfo) {
     //orderID, typeID, ownerID, regionID, stationID, orderRange, bid, price, escrow,
     // minVolume, volEntered, volRemaining, issued, contraband, duration, jumps, isCorp, accountKey, memberID

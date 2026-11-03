@@ -3,9 +3,12 @@
 #include "bots/BotBrain.h"
 #include "Client.h"
 #include "inventory/Inventory.h"
+#include "inventory/ItemFactory.h"
+#include "inventory/ItemType.h"
 #include "ship/Ship.h"
 #include "ship/modules/ModuleManager.h"
 #include "npc/NPC.h"
+#include "market/MarketProxyService.h"
 #include "system/Asteroid.h"
 #include "system/DestinyManager.h"
 #include "system/SystemManager.h"
@@ -13,6 +16,11 @@
 #include "system/cosmicMgrs/BeltMgr.h"
 #include "market/MarketDB.h"
 #include "market/MarketMgr.h"
+#include "station/Station.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
 
 namespace PlayerBot {
 
@@ -236,7 +244,7 @@ void BotBrain::ProcessTrader()
     if (m_state == State::Returning) {
         if (m_client.IsDocked()) {
             m_returnWarpStarted = false;
-            SetState(State::Manual);
+            SetState(State::Docked);
             return;
         }
         if (!m_client.IsInSpace() || m_client.GetShipSE() == nullptr)
@@ -258,7 +266,7 @@ void BotBrain::ProcessTrader()
         m_client.DockToStation();
         if (m_client.IsDocked()) {
             m_returnWarpStarted = false;
-            SetState(State::Manual);
+            SetState(State::Docked);
         }
         return;
     }
@@ -269,20 +277,110 @@ void BotBrain::ProcessTrader()
     }
     if (m_record.homeStationID == 0)
         m_record.homeStationID = m_client.GetStationID();
-    // Keep the cadence deliberately low: this is a real market settlement and
-    // must respect the one-Hz bot budget and wallet balance.
-    if (GetFileTimeNow() - m_stateSince < 60ULL * 10000000ULL)
+    const uint64_t now = GetFileTimeNow();
+    // Each attempt is deliberately spread out and stays within the one-Hz bot
+    // budget. Open orders are backed by this character's wallet or inventory.
+    if (now - m_stateSince < 60ULL * 10000000ULL)
         return;
-    const uint32 quantity = 5;
-    const uint32 orderID = MarketDB::FindSellOrder(itemTypeTrit, m_record.homeStationID, quantity, 0.0);
-    if (orderID != 0) {
+    m_stateSince = now;
+
+    StationItemRef station = m_client.SystemMgr()->GetStationFromInventory(m_record.homeStationID);
+    MarketProxyService* market = m_client.services().Lookup<MarketProxyService>("marketProxy");
+    if (station.get() == nullptr || market == nullptr)
+        return;
+
+    // First offer ore that this character already owns. Posting goes through
+    // MarketProxyService::PlaceCharOrder so fees and item removal use the
+    // same path as a connected pilot.
+    std::vector<InventoryItemRef> hangarItems;
+    station->GetMyInventory()->GetItemsByFlag(flagHangar, hangarItems);
+    for (const InventoryItemRef& item : hangarItems) {
+        if (item.get() == nullptr || item->ownerID() != m_client.GetCharacterID() ||
+            item->locationID() != m_record.homeStationID ||
+            item->categoryID() != EVEDB::invCategories::Asteroid ||
+            MarketDB::FindOwnerOrder(m_client.GetCharacterID(), m_record.homeStationID,
+                                     item->typeID(), false) != 0)
+            continue;
+
+        const ItemType* itemType = sItemFactory.GetType(item->typeID());
+        if (itemType == nullptr)
+            continue;
+
+        const uint32 buyID = MarketDB::FindBuyOrder(item->typeID(), m_record.homeStationID, 1, 0.0);
+        const uint32 sellID = MarketDB::FindSellOrder(item->typeID(), m_record.homeStationID, 1, 1.0e12);
         Market::OrderInfo order;
-        if (MarketDB::GetOrderInfo(orderID, order) &&
-            m_client.GetBalance() >= order.price * quantity)
-            sMktMgr.ExecuteSellOrder(&m_client, orderID, quantity, order.price,
-                                     m_record.homeStationID, itemTypeTrit, false);
+        double bestBid = buyID != 0 && MarketDB::GetOrderInfo(buyID, order) ? order.price : 0.0;
+        double bestAsk = sellID != 0 && MarketDB::GetOrderInfo(sellID, order) ? order.price : 0.0;
+        const double basePrice = itemType->basePrice();
+
+        double askPrice = basePrice > 0.0 ? basePrice * 1.10 : 0.0;
+        if (bestBid > 0.0)
+            askPrice = std::max(askPrice, bestBid * 1.01);
+        if (bestAsk > 0.0 && (bestBid <= 0.0 || bestAsk * 0.99 > bestBid))
+            askPrice = askPrice > 0.0 ? std::min(askPrice, bestAsk * 0.99) : bestAsk * 0.99;
+        if (bestBid > 0.0)
+            askPrice = std::max(askPrice, bestBid * 1.01);
+        askPrice = std::round(askPrice * 100.0) / 100.0;
+        if (askPrice <= 0.0)
+            return;
+
+        const double headroom = sConfig.playerbots.maxISK - m_client.GetBalance();
+        const uint32 maxByWealth = headroom > 0.0
+            ? static_cast<uint32>(std::min<double>(std::floor(headroom / askPrice), 10000.0)) : 0;
+        const uint32 quantity = std::min<uint32>(item->quantity(), maxByWealth);
+        if (quantity != 0 && market->PlaceBotLimitOrder(m_client, m_record.homeStationID,
+                item->typeID(), askPrice, quantity, false, item->itemID(), 7))
+            _log(MARKET__MESSAGE, "PlayerBot %s placed a real sell order for %u %s at %.2f ISK.",
+                 m_client.GetName(), quantity, item->name(), askPrice);
+        return;
     }
-    m_stateSince = GetFileTimeNow();
+
+    // Rotate the ten Trader pilots among common highsec ores. Their bids are
+    // real character orders with limited escrow; miners can sell into them via
+    // ExecuteBuyOrder, after which the Trader lists the acquired stack above
+    // the current bid/ask spread.
+    static const std::array<uint32, 4> oreTypes = {{1230, 1228, 1224, 18}};
+    const uint32 ordinal = (m_client.GetCharacterID() >= 90000001U)
+        ? (m_client.GetCharacterID() - 90000001U) / 6U : m_client.GetCharacterID();
+    const uint32 typeID = oreTypes[ordinal % oreTypes.size()];
+    if (MarketDB::FindOwnerOrder(m_client.GetCharacterID(), m_record.homeStationID, typeID, false) != 0 ||
+        MarketDB::FindOwnerOrder(m_client.GetCharacterID(), m_record.homeStationID, typeID, true) != 0)
+        return;
+
+    const ItemType* type = sItemFactory.GetType(typeID);
+    if (type == nullptr || m_client.GetBalance() >= sConfig.playerbots.maxISK)
+        return;
+
+    const uint32 buyID = MarketDB::FindBuyOrder(typeID, m_record.homeStationID, 1, 0.0);
+    const uint32 sellID = MarketDB::FindSellOrder(typeID, m_record.homeStationID, 1, 1.0e12);
+    Market::OrderInfo order;
+    const double bestBid = buyID != 0 && MarketDB::GetOrderInfo(buyID, order) ? order.price : 0.0;
+    const double bestAsk = sellID != 0 && MarketDB::GetOrderInfo(sellID, order) ? order.price : 0.0;
+    const double basePrice = type->basePrice();
+
+    double bidPrice = basePrice > 0.0 ? basePrice * 0.80 : 0.0;
+    if (bestBid > 0.0)
+        bidPrice = std::max(bidPrice, bestBid * 1.01);
+    if (bestAsk > 0.0 && (bidPrice <= 0.0 || bestAsk * 0.90 < bidPrice))
+        bidPrice = bestAsk * 0.90;
+    if (basePrice > 0.0)
+        bidPrice = std::min(bidPrice, basePrice * 1.25);
+    bidPrice = std::round(bidPrice * 100.0) / 100.0;
+    if (bidPrice <= 0.0)
+        return;
+
+    // Reserve at most 5% of the wallet in a single order and leave room for
+    // the broker fee charged by the regular market service.
+    const double orderBudget = std::min(m_client.GetBalance() * 0.05, 1000000.0);
+    uint32 quantity = static_cast<uint32>(std::floor(orderBudget / (bidPrice * 1.10)));
+    quantity = std::min<uint32>(quantity, 10000);
+    if (quantity == 0)
+        return;
+
+    if (market->PlaceBotLimitOrder(m_client, m_record.homeStationID, typeID,
+                                   bidPrice, quantity, true, 0, 7))
+        _log(MARKET__MESSAGE, "PlayerBot %s placed a real buy order for %u %s at %.2f ISK.",
+             m_client.GetName(), quantity, type->name(), bidPrice);
 }
 
 void BotBrain::ProcessMiner()
@@ -402,16 +500,43 @@ void BotBrain::StopMining()
 
 void BotBrain::SellOre()
 {
+    const double wealthHeadroom = sConfig.playerbots.maxISK - m_client.GetBalance();
+    if (wealthHeadroom <= 0.0)
+        return;
+
     std::multimap<uint8, InventoryItemRef> cargo;
     m_client.GetShip()->GetMyInventory()->GetCargoList(cargo);
     for (const auto& entry : cargo) {
         InventoryItemRef ore = entry.second;
         if (ore.get() == nullptr || ore->categoryID() != EVEDB::invCategories::Asteroid)
             continue;
+
         m_client.MoveItem(ore->itemID(), m_record.homeStationID, flagHangar);
-        const uint32 order = MarketDB::FindBuyOrder(ore->typeID(), m_record.homeStationID, ore->quantity(), 0.0);
-        if (order != 0)
-            sMktMgr.ExecuteBuyOrder(&m_client, order, ore, ore->quantity(), false, ore->typeID(), m_record.homeStationID, 0.0);
+        const uint32 orderID = MarketDB::FindBuyOrder(ore->typeID(), m_record.homeStationID, 1, 0.0);
+        Market::OrderInfo order;
+        if (orderID == 0 || !MarketDB::GetOrderInfo(orderID, order) ||
+            order.ownerID == m_client.GetCharacterID() || order.price <= 0.0)
+            continue;
+
+        // Market fills are bounded by both the public order and the bot's
+        // configured wallet ceiling. Split the stack before settlement because
+        // ExecuteBuyOrder transfers the full item reference it receives.
+        const uint32 maxByOrder = order.quantity;
+        const double headroom = sConfig.playerbots.maxISK - m_client.GetBalance();
+        const uint32 maxByWealth = headroom > 0.0
+            ? static_cast<uint32>(std::min<double>(std::floor(headroom / order.price), 10000000.0)) : 0;
+        const uint32 quantity = std::min<uint32>(ore->quantity(), std::min(maxByOrder, maxByWealth));
+        if (quantity == 0)
+            continue;
+
+        InventoryItemRef saleItem = ore;
+        if (quantity < ore->quantity()) {
+            saleItem = ore->Split(quantity);
+            if (saleItem.get() == nullptr)
+                continue;
+        }
+        sMktMgr.ExecuteBuyOrder(&m_client, orderID, saleItem, quantity, false,
+                                ore->typeID(), m_record.homeStationID, order.price);
     }
 }
 
