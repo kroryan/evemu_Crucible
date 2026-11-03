@@ -1,3 +1,4 @@
+-- +migrate Up
 -- Persistent PlayerBot metadata.  This migration is additive: it never
 -- touches seed market data, player accounts, characters, inventories or orders.
 CREATE TABLE IF NOT EXISTS `botCharacters` (
@@ -24,3 +25,6 @@ CREATE TABLE IF NOT EXISTS `botCharacters` (
 -- INSERT INTO botCharacters(characterID, profession, homeStationID, personality)
 -- VALUES (90000001, 'MINER', 60003760, 'Calm industrial pilot');
 -- Characters outside the EVEMU Bot prefix are never repurposed.
+
+-- +migrate Down
+-- PlayerBot state is persistent runtime data and has no automatic down migration.

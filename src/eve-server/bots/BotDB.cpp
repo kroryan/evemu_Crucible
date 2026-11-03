@@ -127,6 +127,9 @@ void AddProfileSkills(const std::string& profession, std::map<uint32, uint8>& sk
 bool CreateCharacter(EVEServiceManager& services, uint32 accountID, const std::string& name,
                      const std::string& profession, uint32& characterID, uint32& stationID)
 {
+    // State War Academy is present in the Crucible careers dataset and maps
+    // to the Caldari bloodline used below.  Do not use school 1: it is not a
+    // valid school/career pair in a stock EVEmu database.
     const uint8 bloodlineID = 1;
     const CharacterType* charType = sItemFactory.GetCharacterTypeByBloodline(bloodlineID);
     if (charType == nullptr)
@@ -137,7 +140,7 @@ bool CreateCharacter(EVEServiceManager& services, uint32 accountID, const std::s
     cdata.gender = 0;
     cdata.ancestryID = 1;
     cdata.bloodlineID = bloodlineID;
-    cdata.schoolID = 1;
+    cdata.schoolID = 17;
     cdata.description = "EVEMU PlayerBot created on ";
     cdata.description += currentDateTime();
     cdata.securityRating = sConfig.character.startSecRating;
@@ -282,7 +285,8 @@ bool BotDB::EnsureProvisioned(uint32 maxBots, EVEServiceManager& services, uint3
         registered.insert(row.GetUInt(0));
 
     uint32 ordinal = 1;
-    while (registered.size() < maxBots && ordinal < maxBots * 20) {
+    uint32 attempts = 0;
+    while (registered.size() < maxBots && attempts++ < maxBots) {
         const std::string name = BotName(ordinal);
         const std::string profession = kProfessions[(ordinal - 1) % kProfessions.size()];
         const uint32 existingCharacter = FindCharacterByName(name);
