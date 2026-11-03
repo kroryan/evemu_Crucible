@@ -51,10 +51,12 @@ SET( SOURCE
 SET( bots_INCLUDE
      "${TARGET_INCLUDE_DIR}/bots/BotClient.h"
      "${TARGET_INCLUDE_DIR}/bots/BotBrain.h"
+     "${TARGET_INCLUDE_DIR}/bots/BotChatter.h"
      "${TARGET_INCLUDE_DIR}/bots/BotDB.h"
      "${TARGET_INCLUDE_DIR}/bots/BotManager.h" )
 SET( bots_SOURCE
      "${TARGET_SOURCE_DIR}/bots/BotBrain.cpp"
+     "${TARGET_SOURCE_DIR}/bots/BotChatter.cpp"
      "${TARGET_SOURCE_DIR}/bots/BotDB.cpp"
      "${TARGET_SOURCE_DIR}/bots/BotManager.cpp" )
 

@@ -111,7 +111,9 @@
           <dictInlineEntry key="user_affiliateid">
               <int name="user_affiliateid" />
           </dictInlineEntry>
-          <dictInlineEntry key="user_sso_token">
+          <!-- Older Crucible clients do not send SSO data.  Keep this field
+               optional so the normal password challenge can still decode. -->
+          <dictInlineEntry key="user_sso_token" optional="true">
               <wstring name="user_sso_token" safe="true" none_marker="" />
           </dictInlineEntry>
         </dictInline>

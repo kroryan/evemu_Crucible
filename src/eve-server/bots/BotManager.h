@@ -2,6 +2,7 @@
 #define EVE_SERVER_BOTS_BOTMANAGER_H
 
 #include "utils/Singleton.h"
+#include "bots/BotChatter.h"
 #include "bots/BotDB.h"
 
 class Client;
@@ -49,6 +50,7 @@ private:
     std::map<uint32, Record> m_records;
     std::map<uint32, std::unique_ptr<BotClient> > m_clients;
     std::map<uint32, std::unique_ptr<BotBrain> > m_brains;
+    BotChatter m_chatter;
 };
 
 } // namespace PlayerBot

@@ -1320,14 +1320,22 @@ bool ClassDecodeGenerator::ProcessDictInline(const TiXmlElement* field)
                     return false;
                 }
 
-                fprintf(mOutputFile,
-                    "    if (!%s_%u) {\n"
-                    "        _log(XMLP__DECODE_ERROR, \"Decode %s failed: Missing dict entry '%s' in %s\");\n"
-                    "        return false;\n"
-                    "    }\n\n",
-                    iname, count,
-                        mName, key, iname
-               );
+                // A dict entry can be marked optional when a protocol field
+                // was introduced after older clients were released.  We
+                // still decode it when present, but do not reject a packet
+                // that omits it entirely.
+                const char* optional_str = ele->Attribute("optional");
+                const bool optional = optional_str != nullptr && str2<bool>(optional_str);
+                if (!optional) {
+                    fprintf(mOutputFile,
+                        "    if (!%s_%u) {\n"
+                        "        _log(XMLP__DECODE_ERROR, \"Decode %s failed: Missing dict entry '%s' in %s\");\n"
+                        "        return false;\n"
+                        "    }\n\n",
+                        iname, count,
+                            mName, key, iname
+                   );
+                }
                 ++count;
             }
         }

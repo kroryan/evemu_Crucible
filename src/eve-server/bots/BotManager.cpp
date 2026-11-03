@@ -26,6 +26,7 @@ void BotManager::Initialize(EVEServiceManager& services)
         sLog.Warning("      PlayerBots", "Disabled by configuration.");
         return;
     }
+    m_chatter.Initialize();
 
     uint32 created = 0;
     if (!BotDB::EnsureProvisioned(sConfig.playerbots.maxBots, services, created))
@@ -66,6 +67,18 @@ void BotManager::Process()
 {
     if (!m_initialized || !sConfig.playerbots.enabled)
         return;
+
+    // Network/LLM work is completed off-thread.  Only this small drain and
+    // the real Client notification run on the world thread.
+    for (const ChatterReply& reply : m_chatter.Drain()) {
+        BotClient* bot = nullptr;
+        std::map<uint32, std::unique_ptr<BotClient> >::iterator it = m_clients.find(reply.characterID);
+        if (it != m_clients.end())
+            bot = it->second.get();
+        if (bot != nullptr && !reply.text.empty())
+            bot->SelfChatMessage("%s", reply.text.c_str());
+    }
+
     uint16 budget = sConfig.playerbots.cpuBudget;
     for (auto& entry : m_brains) {
         if (budget-- == 0)
@@ -83,6 +96,7 @@ void BotManager::Shutdown()
         return;
     for (auto& entry : m_records)
         Save(entry.second);
+    m_chatter.Shutdown();
     m_brains.clear();
     m_clients.clear();
     m_initialized = false;
@@ -354,6 +368,13 @@ std::vector<ChatReply> BotManager::HandleChat(Client& speaker, const std::string
         [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
 
     std::string result;
+    if (!prefixed && addressed != 0) {
+        const std::map<uint32, Record>::const_iterator record = m_records.find(addressed);
+        const std::map<uint32, std::unique_ptr<BotClient> >::const_iterator bot = m_clients.find(addressed);
+        if (record != m_records.end() && bot != m_clients.end() &&
+            m_chatter.Queue(addressed, bot->second->GetName(), record->second.personality, message))
+            return replies;
+    }
     if (command == "follow" || command == "come") {
         Follow(speaker);
         result = "Following your ship.";
