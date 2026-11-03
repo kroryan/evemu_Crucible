@@ -38,7 +38,8 @@
 EVEClientSession::EVEClientSession(EVETCPConnection** n)
 : mNet(n == nullptr ? nullptr : *n),
 mPacketHandler(nullptr),
-mExtendedMachoPacketHeader(false)
+mExtendedMachoPacketHeader(MachoNetVersion >= 425),
+mMachoPacketFormatChecked(false)
 {
     if (n != nullptr)
         *n = nullptr;
@@ -234,8 +235,20 @@ PyPacket* EVEClientSession::_HandlePacket(PyRep* rep) {
         return PopPacket();
     }
 
-    // Match the client's packet envelope for replies and notifications.
-    mExtendedMachoPacketHeader = p->extendedHeader;
+    // Keep the entire session on the packet envelope advertised in the
+    // version handshake. In particular, the initial session notification is
+    // sent before the first MachoNet request arrives, so switching formats
+    // after that request would leave one client session with mixed envelopes.
+    if (!mMachoPacketFormatChecked) {
+        sLog.Blue("MachoNet", "%s first packet %s uses %u fields; server version %u uses %u.",
+                  GetAddress().c_str(), p->type_string.c_str(), p->extendedHeader ? 9 : 7,
+                  MachoNetVersion, mExtendedMachoPacketHeader ? 9 : 7);
+        if (p->extendedHeader != mExtendedMachoPacketHeader) {
+            sLog.Warning("MachoNet", "%s sent a packet header that differs from the format advertised by the server.",
+                         GetAddress().c_str());
+        }
+        mMachoPacketFormatChecked = true;
+    }
 
     //PySafeDecRef(rep);
     return p;

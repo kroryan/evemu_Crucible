@@ -159,6 +159,7 @@ private:
     // State machine facility:
     PyPacket* ( EVEClientSession::*mPacketHandler )( PyRep* rep );
     bool mExtendedMachoPacketHeader;
+    bool mMachoPacketFormatChecked;
 
     PyPacket* _HandleVersion( PyRep* rep );
     PyPacket* _HandleCommand( PyRep* rep );
