@@ -854,7 +854,7 @@ void LSCService::CharacterLogin(Client* pClient)
     // character selection. Register them through the same channel membership
     // path here, otherwise their Client and ship exist in EntityList but Local
     // (and corp chat) remain empty to human pilots.
-    if (pClient->GetAddress() != "virtual-bot")
+    if (!pClient->IsVirtualClient())
         return;
 
     std::set<int32> channelIDs;

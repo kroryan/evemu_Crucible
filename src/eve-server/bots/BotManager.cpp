@@ -4,6 +4,7 @@
 #include "bots/BotBrain.h"
 #include "bots/BotClient.h"
 #include "Client.h"
+#include "EntityList.h"
 #include "contract/ContractProxy.h"
 #include "corporation/CorporationDB.h"
 #include "fleet/FleetService.h"
@@ -147,6 +148,8 @@ void BotManager::Shutdown()
         Save(entry.second);
     m_chatter.Shutdown();
     m_brains.clear();
+    for (auto& entry : m_clients)
+        sEntityList.Remove(entry.second.get());
     m_clients.clear();
     m_loginQueue.clear();
     m_pendingLogin.clear();
@@ -212,6 +215,7 @@ bool BotManager::Dismiss(uint32 characterID, std::string& result)
     }
     Save(m_records[characterID]);
     m_brains.erase(characterID);
+    sEntityList.Remove(client->second.get());
     m_clients.erase(client);
     result = "Bot logged out; its character, ship, inventory and market state were preserved.";
     return true;

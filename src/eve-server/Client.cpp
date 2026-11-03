@@ -223,6 +223,11 @@ Client::~Client() {
 
 bool Client::ProcessNet()
 {
+    // Server-controlled pilots have no TCP socket. Keep their Client in the
+    // entity list and let the normal 1 Hz world/session processing handle it.
+    if (IsVirtualClient())
+        return true;
+
     state_t state = GetState();
     if (state != TCPConnection::STATE_CONNECTED)
         return false;

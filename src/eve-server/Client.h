@@ -109,6 +109,7 @@ public:
     ClientSession* GetSession()                         { return pSession; }
     // these dont always work...still dont know why.  fixed.  was bad _comp method in PyDict
     std::string GetAddress() const                      { return pSession->GetCurrentString( "address" ); }
+    bool IsVirtualClient() const                        { return GetAddress() == "virtual-bot"; }
     std::string GetLanguageID() const                   { return pSession->GetCurrentString( "languageID" ); }
 
     int32 GetUserID() const                             { return pSession->GetCurrentInt( "userid" ); }
