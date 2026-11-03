@@ -30,6 +30,7 @@
 
 #include "admin/CommandDispatcher.h"
 #include "admin/SlashService.h"
+#include "bots/BotManager.h"
 #include "Client.h"
 #include "chat/LSCService.h"
 #include "fleet/FleetService.h"
@@ -401,12 +402,18 @@ PyResult LSCService::SendMessage(PyCallArgs& call, PyRep* channelInfo, PyWString
         return PyStatic.NewNone();
     }
 
-    if (message.at(0) == '.') {
+    if (!message.empty() && message.at(0) == '.') {
         _log(LSC__INFO, "SlashService->SlashCmd() called via LSC Service");
         m_slash->SlashCommand(call.client, message);
         itr->second->SendMessage(call.client, message.c_str(), true);
     } else {
         itr->second->SendMessage(call.client, message.c_str());
+        const std::vector<PlayerBot::ChatReply> replies = sBotMgr.HandleChat(*call.client, message);
+        for (const PlayerBot::ChatReply& reply : replies) {
+            Client* bot = sBotMgr.Find(reply.characterID);
+            if (bot != nullptr)
+                itr->second->SendMessage(bot, reply.text.c_str());
+        }
     }
 
     return PyStatic.NewNone();

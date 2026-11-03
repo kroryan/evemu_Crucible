@@ -12,6 +12,11 @@ namespace PlayerBot {
 class BotClient;
 class BotBrain;
 
+struct ChatReply {
+    uint32 characterID = 0;
+    std::string text;
+};
+
 class BotManager : public Singleton<BotManager> {
 public:
     BotManager();
@@ -28,6 +33,7 @@ public:
     void Dock();
     bool Attack(uint32 targetID, std::string& result);
     bool Fleet(Client& leader, std::string& result);
+    std::vector<ChatReply> HandleChat(Client& speaker, const std::string& message);
     std::string Status() const;
     Client* Find(uint32 characterID) const;
 

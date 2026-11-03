@@ -54,6 +54,25 @@ market orders.
 restricted to targets already on the bot's grid. `fleet` creates the caller's
 normal fleet when needed and joins all online bots through `FleetService`.
 
+## Channel control
+
+Bots also inspect normal channel messages. Mention an online bot by name for a
+short response, or use the independent PlayerBot prefix (default `!`) for
+orders without colliding with the server's `.` slash-command prefix:
+
+```
+!follow
+!stay
+!dock
+!mine
+!attack <entityID>
+!fleet
+!status
+```
+
+Replies are emitted through the actual `LSCChannel` notification path. This
+fallback is deterministic and works with no LLM configured.
+
 ## Extending professions
 
 Add a `BotBrain` profession handler under `bots/professions/`; the handler must

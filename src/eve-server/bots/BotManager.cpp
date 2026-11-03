@@ -7,6 +7,8 @@
 #include "fleet/FleetService.h"
 #include "system/SystemManager.h"
 
+#include <cctype>
+
 namespace PlayerBot {
 
 BotManager::BotManager() : m_services(nullptr), m_initialized(false) {}
@@ -167,6 +169,82 @@ bool BotManager::Fleet(Client& leader, std::string& result)
     }
     result = "Fleet " + std::to_string(fleetID) + " now has " + std::to_string(joined) + " PlayerBot(s) added.";
     return true;
+}
+
+std::vector<ChatReply> BotManager::HandleChat(Client& speaker, const std::string& message)
+{
+    std::vector<ChatReply> replies;
+    if (!m_initialized || message.empty() || Find(speaker.GetCharacterID()) != nullptr)
+        return replies;
+
+    std::string lower = message;
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+        [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    const std::string prefix = sConfig.playerbots.chatPrefix;
+    const bool prefixed = !prefix.empty() && message.compare(0, prefix.size(), prefix) == 0;
+
+    uint32 addressed = 0;
+    for (const auto& entry : m_clients) {
+        std::string name = entry.second->GetName();
+        std::transform(name.begin(), name.end(), name.begin(),
+            [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+        if (lower.find(name) != std::string::npos) {
+            addressed = entry.first;
+            break;
+        }
+    }
+    if (!prefixed && addressed == 0)
+        return replies;
+
+    std::string command = prefixed ? message.substr(prefix.size()) : "";
+    while (!command.empty() && std::isspace(static_cast<unsigned char>(command.front())))
+        command.erase(command.begin());
+    std::transform(command.begin(), command.end(), command.begin(),
+        [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+
+    std::string result;
+    if (command == "follow" || command == "come") {
+        Follow(speaker);
+        result = "Following your ship.";
+    } else if (command == "stay") {
+        Stay();
+        result = "Holding position.";
+    } else if (command == "dock") {
+        Dock();
+        result = "Returning to station.";
+    } else if (command == "mine") {
+        Mine();
+        result = "Mining operation acknowledged.";
+    } else if (command == "fleet") {
+        Fleet(speaker, result);
+    } else if (command == "status") {
+        result = "Online PlayerBots: " + std::to_string(m_clients.size()) + ".";
+    } else if (prefixed && command.compare(0, 7, "attack ") == 0) {
+        const std::string target = command.substr(7);
+        bool numeric = !target.empty();
+        for (char ch : target)
+            numeric = numeric && std::isdigit(static_cast<unsigned char>(ch));
+        if (numeric)
+            Attack(static_cast<uint32>(strtoul(target.c_str(), nullptr, 10)), result);
+        else
+            result = "Use " + prefix + "attack <entityID>.";
+    } else if (prefixed && !command.empty()) {
+        result = "Commands: " + prefix + "follow, " + prefix + "stay, " + prefix +
+            "dock, " + prefix + "mine, " + prefix + "fleet, " + prefix + "status.";
+    } else {
+        static const char* acknowledgements[] = {
+            "Acknowledged. I am flying my assigned route.",
+            "Copy that. The operation is running on live orders.",
+            "o7. Let me know if you need a fleet or mining support."
+        };
+        result = acknowledgements[addressed % (sizeof(acknowledgements) / sizeof(acknowledgements[0]))];
+    }
+
+    if (addressed == 0 && !m_clients.empty())
+        addressed = m_clients.begin()->first;
+    if (addressed != 0 && !result.empty())
+        replies.push_back({addressed, result});
+    return replies;
 }
 
 std::string BotManager::Status() const

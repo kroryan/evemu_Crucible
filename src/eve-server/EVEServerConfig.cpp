@@ -134,7 +134,9 @@ EVEServerConfig::EVEServerConfig()
     playerbots.activeEndHour = 24;
     playerbots.bootstrapISK = 5000000.0;
     playerbots.maxISK = 250000000.0;
-    playerbots.chatPrefix = ".";
+    // '.' is reserved by the existing SlashService.  Keep PlayerBot chat
+    // commands independently configurable and usable in ordinary channels.
+    playerbots.chatPrefix = "!";
     playerbots.llm.enabled = false;
     playerbots.llm.endpoint = "http://localhost:11434/v1";
     playerbots.llm.apiKey = "";
