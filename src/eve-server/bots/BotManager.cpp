@@ -9,11 +9,12 @@
 #include "inventory/ItemFactory.h"
 #include "system/SystemManager.h"
 
+#include <algorithm>
 #include <cctype>
 
 namespace PlayerBot {
 
-BotManager::BotManager() : m_services(nullptr), m_initialized(false) {}
+BotManager::BotManager() : m_services(nullptr), m_initialized(false), m_processCursor(0) {}
 BotManager::~BotManager() { Shutdown(); }
 
 void BotManager::Initialize(EVEServiceManager& services)
@@ -79,12 +80,30 @@ void BotManager::Process()
             bot->SelfChatMessage("%s", reply.text.c_str());
     }
 
-    uint16 budget = sConfig.playerbots.cpuBudget;
-    for (auto& entry : m_brains) {
-        if (budget-- == 0)
-            break;
-        entry.second->Process();
-        Save(m_records[entry.first]);
+    if (m_brains.empty() || sConfig.playerbots.cpuBudget == 0)
+        return;
+
+    // A fixed range-for always starts at the lowest characterID, starving all
+    // later bots whenever the configured budget is smaller than the fleet.
+    // Rotate the starting point so every brain gets its share over time.
+    std::map<uint32, std::unique_ptr<BotBrain> >::iterator brain =
+        m_brains.upper_bound(m_processCursor);
+    if (brain == m_brains.end())
+        brain = m_brains.begin();
+
+    const size_t count = std::min<size_t>(sConfig.playerbots.cpuBudget, m_brains.size());
+    for (size_t processed = 0; processed < count; ++processed) {
+        const uint32 characterID = brain->first;
+        BotBrain* current = brain->second.get();
+        ++brain;
+        if (brain == m_brains.end())
+            brain = m_brains.begin();
+
+        m_processCursor = characterID;
+        current->Process();
+        std::map<uint32, Record>::iterator record = m_records.find(characterID);
+        if (record != m_records.end())
+            Save(record->second);
     }
 }
 

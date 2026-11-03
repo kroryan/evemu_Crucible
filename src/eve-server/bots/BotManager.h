@@ -47,6 +47,7 @@ private:
 
     EVEServiceManager* m_services;
     bool m_initialized;
+    uint32 m_processCursor;
     std::map<uint32, Record> m_records;
     std::map<uint32, std::unique_ptr<BotClient> > m_clients;
     std::map<uint32, std::unique_ptr<BotBrain> > m_brains;

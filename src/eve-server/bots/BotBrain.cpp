@@ -55,16 +55,23 @@ void BotBrain::Process()
 {
     if (m_client.GetShip().get() == nullptr)
         return;
-    if (m_client.InPod()) {
-        StopMining();
-        m_record.respawnAt = GetFileTimeNow() + (static_cast<uint64_t>(sConfig.playerbots.respawnDelay) * 10000000ULL);
-        SetState(State::Respawning);
-    }
+
+    const uint64_t now = GetFileTimeNow();
     if (m_state == State::Respawning) {
-        // The normal Client pod/rookie-ship path is authoritative.  We merely
-        // wait before resuming work; nothing is reimbursed or fabricated here.
-        if (GetFileTimeNow() >= m_record.respawnAt && m_client.IsDocked())
-            SetState(State::Docked);
+        // Do not move the deadline forward on each tick. A destroyed bot must
+        // be allowed to finish the normal clone/rookie-ship path before its
+        // profession brain resumes.
+        if (m_record.respawnAt == 0)
+            m_record.respawnAt = now + static_cast<uint64_t>(sConfig.playerbots.respawnDelay) * 10000000ULL;
+        if (now < m_record.respawnAt || m_client.InPod() || !m_client.IsDocked())
+            return;
+
+        m_record.respawnAt = 0;
+        SetState(State::Docked);
+    } else if (m_client.InPod()) {
+        StopMining();
+        m_record.respawnAt = now + static_cast<uint64_t>(sConfig.playerbots.respawnDelay) * 10000000ULL;
+        SetState(State::Respawning);
         return;
     }
     if (m_state == State::Attacking && m_record.profession != "RAT_HUNTER") {
