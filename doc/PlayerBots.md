@@ -46,8 +46,13 @@ character buy and sell orders through `MarketProxyService::PlaceCharOrder`.
 Buy escrow and fees use its wallet, sell orders consume ore from its hangar, and
 miners can fill trader bids through `MarketMgr::ExecuteBuyOrder`. Each bot keeps
 at most one order per item and side, caps bid escrow to a small share of its
-wallet, and respects the configured wealth headroom when selling. This loop
-still needs live fill and restart verification after deployment.
+wallet, and respects the configured wealth headroom when selling.
+
+Deployment check on 2026-11-03: after a server restart, all 60 dedicated bot
+accounts and characters were online, with 50 in Kisogo (`30000141`) and 10
+docked at station `60014659`. Ten active market orders were owned by ten bot
+characterIDs: nine buy orders with wallet escrow and one sell order backed by
+the bot's ore. A live miner-to-bot buy-order fill is still unverified.
 
 `HAULER`, `MISSION_RUNNER`, and `INDUSTRIALIST` currently use the
 productive miner fallback until a route/agent/manufacturing job is available;
