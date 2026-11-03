@@ -103,7 +103,6 @@ public:
     static bool GetCharacterData(uint32 characterID, CharacterData &into);
     static void GetCharacterDataMap(uint32 charID, std::map<std::string, int64> &characterDataMap);
     static bool GetCharHomeStation(uint32 charID, uint32 &stationID);
-    static PyRep* GetHomeStationRow(uint32 charID);
     //if you want to get the typeID of the clone use GetActiveCloneType
     static bool GetActiveCloneID(uint32 charID, uint32 &itemID);
     static PyRep *GetInfoWindowDataForChar(uint32 charID);
@@ -213,7 +212,7 @@ public:
     bool        SaveSkillQueue(uint32 charID, SkillQueue &queue);
     bool        SavePausedSkillQueue(uint32 charID, SkillQueue &queue);
     void        SaveSkillHistory(uint16 eventID, double logDate, uint32 characterID, uint32 skillTypeID, uint8 skillLevel, uint32 absolutePoints);
-    PyRep*      GetSkillHistory(uint32 characterID);
+    PyRep*      GetSkillHistory(uint32 charID);
     void        UpdateSkillQueueEndTime(int64 endtime, uint32 charID);
 
     void        SetLogInTime(uint32 charID);

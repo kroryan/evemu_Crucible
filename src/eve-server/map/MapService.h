@@ -61,7 +61,6 @@ protected:
     PyResult GetIncursionGlobalReport(PyCallArgs& call);
     PyResult GetVictoryPoints(PyCallArgs& call);
     PyResult GetStuckSystems(PyCallArgs& call);
-    PyResult GetFacWarZoneInfo(PyCallArgs& call, PyInt* factionID);
 
 };
 

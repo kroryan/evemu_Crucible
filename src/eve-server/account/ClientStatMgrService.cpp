@@ -29,7 +29,7 @@
 #include "account/ClientStatMgrService.h"
 
 ClientStatsMgr::ClientStatsMgr() :
-    Service("clientStats")
+    Service("clientStatsMgr")
 {
     this->Add("SubmitStats", &ClientStatsMgr::SubmitStats);
 }

@@ -68,7 +68,7 @@ bool EVEPacketDispatcher::DispatchPacket(PyPacket* packet)
         }
         case CALL_REQ: {
             //check the string part, just for good measure
-            if (packet->type_string != "macho.CallReq" && packet->type_string != "carbon.common.script.net.machoNetPacket.CallReq") {
+            if (packet->type_string != "macho.CallReq") {
                 sLog.Error("EVEPacketDispatcher","Received CALL_REQ with invalid type string '%s'", packet->type_string.c_str());
                 return false;
             }
@@ -83,7 +83,7 @@ bool EVEPacketDispatcher::DispatchPacket(PyPacket* packet)
         }
         case CALL_RSP: {
             //check the string part, just for good measure
-            if (packet->type_string != "macho.CallRsp" && packet->type_string != "carbon.common.script.net.machoNetPacket.CallRsp") {
+            if (packet->type_string != "macho.CallRsp") {
                 sLog.Error("EVEPacketDispatcher","Received CALL_RSP with invalid type string '%s'", packet->type_string.c_str());
                 return false;
             }
@@ -133,7 +133,7 @@ bool EVEPacketDispatcher::DispatchPacket(PyPacket* packet)
         }
         case PING_REQ: {
             //check the string part, just for good measure
-            if (packet->type_string != "macho.PingReq" && packet->type_string != "carbon.common.script.net.machoNetPacket.PingReq") {
+            if (packet->type_string != "macho.PingReq") {
                 sLog.Error("EVEPacketDispatcher","Received PING_REQ with invalid type string '%s'", packet->type_string.c_str());
                 return false;
             }
@@ -195,8 +195,8 @@ bool EVEPacketDispatcher::Handle_SessionChange(PyPacket* packet, SessionChangeNo
 
 bool EVEPacketDispatcher::Handle_PingReq(PyPacket* packet)
 {
-    sLog.Blue("EVEPacketDispatcher","Ping Request received.");
-    return true;
+    sLog.Error("EVEPacketDispatcher","Unhandled Ping Request.");
+    return false;
 }
 bool EVEPacketDispatcher::Handle_PingRsp(PyPacket* packet)
 {

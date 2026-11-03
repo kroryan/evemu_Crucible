@@ -1099,43 +1099,6 @@ bool CharacterDB::GetCharHomeStation(uint32 characterID, uint32 &stationID) {
 	return true;
 }
 
-PyRep* CharacterDB::GetHomeStationRow(uint32 characterID) {
-    DBQueryResult res;
-    if (!sDatabase.RunQuery(res,
-        "SELECT e.locationID, s.solarSystemID, s.stationTypeID "
-        "FROM entity e "
-        "LEFT JOIN stastations s ON e.locationID = s.stationID "
-        "WHERE e.ownerID = %u "
-        "  AND e.flag=400",
-        characterID ))
-    {
-        _log(CHARACTER__ERROR, "Could't get home station row for char %u - query failed: %s", characterID, res.error.c_str());
-        return nullptr;
-    }
-
-    _log(CHARACTER__MESSAGE, "GetHomeStationRow: char %u returned %u rows", characterID, res.GetRowCount());
-
-    DBResultRow row;
-    if (!res.GetRow(row)) {
-        _log(CHARACTER__ERROR, "No home station found for char %u", characterID );
-        return nullptr;
-    }
-
-    uint32 stationID = row.GetUInt(0);
-    uint32 solarSystemID = row.GetUInt(1);
-    uint32 stationTypeID = row.GetUInt(2);
-
-    _log(CHARACTER__MESSAGE, "GetHomeStationRow: char %u - stationID=%u, solarSystemID=%u, stationTypeID=%u", characterID, stationID, solarSystemID, stationTypeID);
-
-    PyDict* result = new PyDict();
-    result->SetItemString("stationID", new PyInt(stationID));
-    result->SetItemString("solarSystemID", new PyInt(solarSystemID));
-    result->SetItemString("stationTypeID", new PyInt(stationTypeID));
-
-    PyObject* keyVal = new PyObject("util.KeyVal", result);
-    return keyVal;
-}
-
 //replace all the typeID of the character's clones
 bool CharacterDB::ChangeCloneType(uint32 characterID, uint32 typeID)
 {
