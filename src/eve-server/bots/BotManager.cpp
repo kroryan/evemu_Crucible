@@ -14,7 +14,9 @@
 
 namespace PlayerBot {
 
-BotManager::BotManager() : m_services(nullptr), m_initialized(false), m_processCursor(0) {}
+BotManager::BotManager()
+: m_services(nullptr), m_initialized(false), m_processCursor(0), m_nextLoginAt(0)
+{}
 BotManager::~BotManager() { Shutdown(); }
 
 void BotManager::Initialize(EVEServiceManager& services)
@@ -39,14 +41,15 @@ void BotManager::Initialize(EVEServiceManager& services)
     for (const Record& record : records)
         m_records.emplace(record.characterID, record);
 
-    uint32 loggedIn = 0;
-    for (auto& entry : m_records) {
-        if (loggedIn >= sConfig.playerbots.maxBots)
+    for (const auto& entry : m_records) {
+        if (m_pendingLogin.size() >= sConfig.playerbots.maxBots)
             break;
-        if (Login(entry.second))
-            ++loggedIn;
+        m_loginQueue.push_back(entry.first);
+        m_pendingLogin.insert(entry.first);
     }
-    sLog.Green("      PlayerBots", "Loaded %u persistent PlayerBots (limit %u).", loggedIn, sConfig.playerbots.maxBots);
+    m_nextLoginAt = GetFileTimeNow();
+    sLog.Green("      PlayerBots", "Queued %zu persistent PlayerBots for staggered login (limit %u).",
+                m_pendingLogin.size(), sConfig.playerbots.maxBots);
 }
 
 bool BotManager::Login(Record& record)
@@ -68,6 +71,26 @@ void BotManager::Process()
 {
     if (!m_initialized || !sConfig.playerbots.enabled)
         return;
+
+    // Avoid creating a 60-client/entity/warp burst during world startup.
+    // Login one virtual pilot per second; brains are separately time-sliced.
+    const uint64_t now = GetFileTimeNow();
+    if (!m_loginQueue.empty() && m_clients.size() < sConfig.playerbots.maxBots && now >= m_nextLoginAt) {
+        const uint32 characterID = m_loginQueue.front();
+        m_loginQueue.pop_front();
+        m_pendingLogin.erase(characterID);
+
+        std::map<uint32, Record>::iterator record = m_records.find(characterID);
+        if (record != m_records.end() && m_clients.find(characterID) == m_clients.end() && !Login(record->second)) {
+            // Retry transient failures after the rest of the queue has had a
+            // chance to start; a bad record must not block the entire fleet.
+            m_loginQueue.push_back(characterID);
+            m_pendingLogin.insert(characterID);
+            m_nextLoginAt = now + 30ULL * 10000000ULL;
+        } else {
+            m_nextLoginAt = now + 10000000ULL;
+        }
+    }
 
     // Network/LLM work is completed off-thread.  Only this small drain and
     // the real Client notification run on the world thread.
@@ -118,6 +141,11 @@ void BotManager::Shutdown()
     m_chatter.Shutdown();
     m_brains.clear();
     m_clients.clear();
+    m_loginQueue.clear();
+    m_pendingLogin.clear();
+    m_records.clear();
+    m_processCursor = 0;
+    m_nextLoginAt = 0;
     m_initialized = false;
 }
 
@@ -136,15 +164,36 @@ bool BotManager::Spawn(const std::string& profession, uint32 count, std::string&
         result = "Unknown profession. Use miner, hauler, mission_runner, rat_hunter, trader or industrialist.";
         return false;
     }
-    uint32 added = 0;
+    std::vector<uint32> selected;
     for (auto& entry : m_records) {
-        if (added >= count || m_clients.size() >= sConfig.playerbots.maxBots)
+        if (selected.size() >= count)
             break;
-        if (entry.second.profession == requested && m_clients.find(entry.first) == m_clients.end() && Login(entry.second))
-            ++added;
+        if (entry.second.profession != requested || m_clients.find(entry.first) != m_clients.end())
+            continue;
+        if (m_pendingLogin.find(entry.first) == m_pendingLogin.end() &&
+            m_clients.size() + m_pendingLogin.size() >= sConfig.playerbots.maxBots)
+            continue;
+        selected.push_back(entry.first);
     }
-    result = "Activated " + std::to_string(added) + " persistent " + requested + " bot(s).";
-    return added != 0;
+
+    // All persistent records may already be in the startup queue. Promote the
+    // requested profession so /bot spawn has an observable effect without
+    // violating the one-login-per-second startup budget.
+    for (uint32 characterID : selected) {
+        std::deque<uint32>::iterator queued = std::find(m_loginQueue.begin(), m_loginQueue.end(), characterID);
+        if (queued != m_loginQueue.end())
+            m_loginQueue.erase(queued);
+        else
+            m_pendingLogin.insert(characterID);
+    }
+    for (std::vector<uint32>::reverse_iterator it = selected.rbegin(); it != selected.rend(); ++it)
+        m_loginQueue.push_front(*it);
+    if (!selected.empty())
+        m_nextLoginAt = GetFileTimeNow();
+
+    result = "Prioritized " + std::to_string(selected.size()) + " persistent " + requested +
+        " bot(s) for staggered login.";
+    return !selected.empty();
 }
 
 bool BotManager::Dismiss(uint32 characterID, std::string& result)
@@ -161,16 +210,44 @@ bool BotManager::Dismiss(uint32 characterID, std::string& result)
     return true;
 }
 
-void BotManager::Follow(Client& leader) { for (auto& entry : m_brains) entry.second->SetManualFollow(leader); }
-void BotManager::Stay() { for (auto& entry : m_brains) entry.second->SetManualStay(); }
-void BotManager::Mine() { for (auto& entry : m_brains) entry.second->RequestMine(); }
-void BotManager::Dock() { for (auto& entry : m_brains) entry.second->RequestDock(); }
+void BotManager::Follow(Client& leader, uint32 botID)
+{
+    for (auto& entry : m_brains)
+        if (botID == 0 || entry.first == botID)
+            entry.second->SetManualFollow(leader);
+}
 
-bool BotManager::Attack(uint32 targetID, std::string& result)
+void BotManager::Stay(uint32 botID)
+{
+    for (auto& entry : m_brains)
+        if (botID == 0 || entry.first == botID)
+            entry.second->SetManualStay();
+}
+
+void BotManager::Mine(uint32 botID, uint32 asteroidTypeID)
+{
+    for (auto& entry : m_brains)
+        if (botID == 0 || entry.first == botID)
+            entry.second->RequestMine(asteroidTypeID);
+}
+
+void BotManager::Dock(uint32 botID)
+{
+    for (auto& entry : m_brains)
+        if (botID == 0 || entry.first == botID)
+            entry.second->RequestDock();
+}
+
+bool BotManager::Attack(uint32 targetID, std::string& result, uint32 botID)
 {
     uint32 ordered = 0;
     for (auto& entry : m_brains) {
-        Client* client = m_clients[entry.first].get();
+        if (botID != 0 && entry.first != botID)
+            continue;
+        std::map<uint32, std::unique_ptr<BotClient> >::iterator clientIt = m_clients.find(entry.first);
+        if (clientIt == m_clients.end())
+            continue;
+        Client* client = clientIt->second.get();
         if (client->IsInSpace() && client->SystemMgr()->FindEntityByID(targetID) != nullptr) {
             entry.second->RequestAttack(targetID);
             ++ordered;

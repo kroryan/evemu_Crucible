@@ -63,6 +63,8 @@ datos de DB y market existentes.
 
 - [ ] Repartir el presupuesto con cursor round-robin y límite de acciones/tiempo
   para que ningún bot de ID alto quede sin procesar.
+- [ ] Escalonar login virtual y primer movimiento para evitar una oleada de
+  entidades y warps al arrancar con 60 bots.
 - [ ] Corregir muerte y respawn: fijar `respawnAt` una sola vez; usar clone,
   cápsula y rookie ship del flujo normal; no reembolsar pérdidas.
 - [ ] Recuperar estados tras reinicio validando nave, estación, sistema y belt.

@@ -36,6 +36,8 @@
 #include "fleet/FleetService.h"
 #include "services/ServiceManager.h"
 
+#include <set>
+
 
 /** @todo
  * LSC system todo list...
@@ -842,8 +844,33 @@ PyResult LSCService::GetMember(PyCallArgs &call) {
 
 void LSCService::CharacterLogin(Client* pClient)
 {
+    if (pClient == nullptr)
+        return;
+
     CreateSystemChannel(pClient->GetCorporationID());
     CreateSystemChannel(pClient->GetAllianceID());
+
+    // Socketless PlayerBots do not issue the client's JoinChannels RPC after
+    // character selection. Register them through the same channel membership
+    // path here, otherwise their Client and ship exist in EntityList but Local
+    // (and corp chat) remain empty to human pilots.
+    if (pClient->GetAddress() != "virtual-bot")
+        return;
+
+    std::set<int32> channelIDs;
+    channelIDs.insert(pClient->GetSystemID());
+    channelIDs.insert(pClient->GetCorporationID());
+    if (pClient->GetAllianceID() != 0)
+        channelIDs.insert(pClient->GetAllianceID());
+
+    for (int32 channelID : channelIDs) {
+        if (channelID == 0)
+            continue;
+        CreateSystemChannel(channelID);
+        LSCChannel* channel = GetChannelByID(channelID);
+        if (channel != nullptr && !channel->IsJoined(pClient->GetCharacterID()))
+            channel->JoinChannel(pClient);
+    }
 }
 
 void LSCService::SystemUnload(uint32 systemID, uint32 constID, uint32 regionID)

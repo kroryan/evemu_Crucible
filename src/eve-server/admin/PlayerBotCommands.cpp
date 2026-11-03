@@ -4,16 +4,68 @@
 #include "admin/CommandDB.h"
 #include "bots/BotManager.h"
 #include "Client.h"
+#include "inventory/ItemFactory.h"
 
 PyResult Command_bot(Client* pClient, CommandDB* db, EVEServiceManager& services, const Seperator& args)
 {
     if (args.argCount() < 2)
-        return new PyString("Usage: /bot spawn <profession> <n> | status | dismiss <characterID> | follow | come | stay | dock | mine | attack <entityID> | fleet | corp invite [corpID] [botID] | give <typeID> <quantity> [botID] | contract <botID> [assigneeID] [reward]");
+        return new PyString("Usage: /bot spawn <profession> <n> | status | order <botID|all> <follow|stay|dock|mine|attack> [targetID] | dismiss <characterID> | follow | come | stay | dock | mine | attack <entityID> [botID] | fleet | corp invite [corpID] [botID] | give <typeID> <quantity> [botID] | contract <botID> [assigneeID] [reward]");
 
     const std::string action = args.arg(1);
     std::string result;
     if (action == "status")
         return new PyString(sBotMgr.Status());
+    if (action == "order") {
+        if (args.argCount() < 4 || args.argCount() > 5)
+            throw CustomError("Usage: /bot order <botID|all> <follow|stay|dock|mine|attack> [targetID]");
+
+        const std::string selector = args.arg(2);
+        uint32 botID = 0;
+        if (selector != "all") {
+            if (!args.isNumber(2))
+                throw CustomError("The bot selector must be a characterID or 'all'.");
+            botID = static_cast<uint32>(strtoul(selector.c_str(), nullptr, 10));
+            if (botID == 0 || sBotMgr.Find(botID) == nullptr)
+                throw CustomError("That PlayerBot is not online.");
+        }
+
+        const std::string order = args.arg(3);
+        if ((order == "follow" || order == "come") && args.argCount() == 4) {
+            sBotMgr.Follow(*pClient, botID);
+            return new PyString("Follow order sent.");
+        }
+        if (order == "stay" && args.argCount() == 4) {
+            sBotMgr.Stay(botID);
+            return new PyString("Hold position order sent.");
+        }
+        if (order == "dock" && args.argCount() == 4) {
+            sBotMgr.Dock(botID);
+            return new PyString("Dock order sent.");
+        }
+        if (order == "mine" && args.argCount() <= 5) {
+            uint32 asteroidTypeID = 0;
+            if (args.argCount() == 5) {
+                if (!args.isNumber(4))
+                    throw CustomError("Mining target must be an asteroid typeID.");
+                asteroidTypeID = static_cast<uint32>(strtoul(args.arg(4).c_str(), nullptr, 10));
+                if (asteroidTypeID > UINT16_MAX)
+                    throw CustomError("Asteroid typeID is outside the supported range.");
+                const ItemType* asteroidType = sItemFactory.GetType(static_cast<uint16>(asteroidTypeID));
+                if (asteroidType == nullptr || asteroidType->categoryID() != EVEDB::invCategories::Asteroid)
+                    throw CustomError("That typeID is not an asteroid.");
+            }
+            sBotMgr.Mine(botID, asteroidTypeID);
+            return new PyString("Mining order sent.");
+        }
+        if (order == "attack" && args.argCount() == 5) {
+            if (!args.isNumber(4))
+                throw CustomError("Attack target must be an entityID.");
+            std::string result;
+            sBotMgr.Attack(static_cast<uint32>(strtoul(args.arg(4).c_str(), nullptr, 10)), result, botID);
+            return new PyString(result);
+        }
+        throw CustomError("Usage: /bot order <botID|all> <follow|stay|dock|mine|attack> [targetID]");
+    }
     if (action == "spawn") {
         if (args.argCount() != 4 || !args.isNumber(3))
             throw CustomError("Usage: /bot spawn miner <n>");
@@ -43,9 +95,15 @@ PyResult Command_bot(Client* pClient, CommandDB* db, EVEServiceManager& services
         return new PyString("Online PlayerBots were ordered to mine.");
     }
     if (action == "attack") {
-        if (args.argCount() != 3 || !args.isNumber(2))
-            throw CustomError("Usage: /bot attack <target entityID>");
-        sBotMgr.Attack(atoi(args.arg(2).c_str()), result);
+        if ((args.argCount() != 3 && args.argCount() != 4) || !args.isNumber(2))
+            throw CustomError("Usage: /bot attack <target entityID> [botID]");
+        uint32 botID = 0;
+        if (args.argCount() == 4) {
+            if (!args.isNumber(3))
+                throw CustomError("botID must be numeric");
+            botID = static_cast<uint32>(strtoul(args.arg(3).c_str(), nullptr, 10));
+        }
+        sBotMgr.Attack(static_cast<uint32>(strtoul(args.arg(2).c_str(), nullptr, 10)), result, botID);
         return new PyString(result);
     }
     if (action == "fleet") {

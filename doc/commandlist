@@ -14,8 +14,12 @@ characters; they do not create simulated market or combat results.
       Log out one bot without deleting its character, wallet, ship, or items.
   /bot follow | come | stay | dock | mine
       Issue the corresponding real movement/operation order to online bots.
+  /bot order <botID|all> <follow|stay|dock|mine|attack> [targetID]
+      Send a command to one online bot by characterID or to all bots. Mining
+      accepts an optional asteroid typeID; attack requires a visible entityID.
   /bot attack <entityID>
       Lock and engage an entity already on the bot grid using fitted modules.
+      An optional botID limits the order to one bot.
   /bot fleet
       Create/use the caller's normal fleet and invite online bots.
   /bot corp invite [corporationID] [botID]

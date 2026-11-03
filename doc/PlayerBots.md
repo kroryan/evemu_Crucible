@@ -6,6 +6,11 @@ not use a parallel economy. A bot therefore appears in the same EntityList,
 bubble and local roster as a player and uses the normal mining module and
 market settlement paths.
 
+During virtual login, the server also joins bots to their system Local and
+corporation/alliance channels through the normal `LSCChannel::JoinChannel`
+path. Real clients make this subscription with `LSC.JoinChannels`; socketless
+bots cannot issue that RPC themselves.
+
 ## Enablement
 
 1. Apply `sql/migrations/20261103090000-playerbots.sql`.
@@ -18,6 +23,9 @@ market settlement paths.
 
 `maxBots` defaults to 60. `cpuBudget` caps brains evaluated per one-Hz tick,
 so a large population is spread over ticks rather than stalling the world.
+Existing enabled bot records are queued for staggered virtual login at one bot
+per second, and each brain applies a deterministic startup delay before its
+first autonomous action. This avoids a 60-ship undock/warp burst on server boot.
 
 ## Real service lifecycle
 
@@ -49,6 +57,8 @@ All bot control uses one documented slash command (PROGRAMMER role):
 /bot dismiss <characterID>
 /bot follow | come | stay | dock | mine
 /bot attack <target entityID>
+/bot attack <target entityID> <botID>
+/bot order <botID|all> <follow|stay|dock|mine|attack> [targetID]
 /bot fleet
 /bot corp invite [corporationID] [botID]
 /bot give <typeID> <quantity> [botID]
@@ -63,6 +73,8 @@ market orders.
 `attack` uses the normal target-lock and fitted-module activation path; it is
 restricted to targets already on the bot's grid. `fleet` creates the caller's
 normal fleet when needed and joins all online bots through `FleetService`.
+The `order` form can target one online bot by characterID or all online bots;
+for `mine`, its optional `targetID` is an asteroid typeID.
 
 ## Channel control
 

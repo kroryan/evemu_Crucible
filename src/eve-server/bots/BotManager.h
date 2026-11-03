@@ -5,6 +5,9 @@
 #include "bots/BotChatter.h"
 #include "bots/BotDB.h"
 
+#include <deque>
+#include <set>
+
 class Client;
 class EVEServiceManager;
 
@@ -28,11 +31,11 @@ public:
     void Shutdown();
     bool Spawn(const std::string& profession, uint32 count, std::string& result);
     bool Dismiss(uint32 characterID, std::string& result);
-    void Follow(Client& leader);
-    void Stay();
-    void Mine();
-    void Dock();
-    bool Attack(uint32 targetID, std::string& result);
+    void Follow(Client& leader, uint32 botID = 0);
+    void Stay(uint32 botID = 0);
+    void Mine(uint32 botID = 0, uint32 asteroidTypeID = 0);
+    void Dock(uint32 botID = 0);
+    bool Attack(uint32 targetID, std::string& result, uint32 botID = 0);
     bool Fleet(Client& leader, std::string& result);
     bool CorpInvite(uint32 corporationID, uint32 botID, std::string& result);
     bool Give(uint32 typeID, uint32 quantity, uint32 botID, std::string& result);
@@ -48,6 +51,9 @@ private:
     EVEServiceManager* m_services;
     bool m_initialized;
     uint32 m_processCursor;
+    uint64_t m_nextLoginAt;
+    std::deque<uint32> m_loginQueue;
+    std::set<uint32> m_pendingLogin;
     std::map<uint32, Record> m_records;
     std::map<uint32, std::unique_ptr<BotClient> > m_clients;
     std::map<uint32, std::unique_ptr<BotBrain> > m_brains;

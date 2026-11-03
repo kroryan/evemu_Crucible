@@ -17,15 +17,29 @@
 namespace PlayerBot {
 
 BotBrain::BotBrain(Client& client, Record& record)
-: m_client(client), m_record(record), m_state(State::Docked), m_stateSince(GetFileTimeNow()), m_targetID(0)
+: m_client(client), m_record(record), m_state(State::Docked), m_stateSince(GetFileTimeNow()),
+  m_autoStartAt(GetFileTimeNow() + ((static_cast<uint64_t>(record.characterID) * 37ULL) % 60ULL) * 10000000ULL),
+  m_targetID(0), m_requestedAsteroidTypeID(0), m_manualMining(false), m_returnWarpStarted(false)
 {
     if (record.state == "MINING") m_state = State::Mining;
     else if (record.state == "WARP_TO_BELT") m_state = State::WarpToBelt;
     else if (record.state == "RETURNING") m_state = State::Returning;
     else if (record.state == "SELLING") m_state = State::Selling;
     else if (record.state == "ATTACKING") m_state = State::Attacking;
-    else if (record.state == "MANUAL") m_state = State::Manual;
     else if (record.state == "RESPAWNING") m_state = State::Respawning;
+
+    // A manual movement/order is not persisted as a resumable command. If the
+    // bot restarted docked, resume its profession loop instead of restoring a
+    // MANUAL state that has no target and can never make progress.
+    if (m_client.IsDocked() && m_state != State::Respawning) {
+        if (m_state == State::Returning)
+            m_state = State::Selling;
+        else if (m_state != State::Selling)
+            m_state = State::Docked;
+    } else if (m_state == State::Manual) {
+        m_state = State::Docked;
+    }
+    m_record.state = GetStateName();
 }
 
 void BotBrain::SetState(State state)
@@ -74,8 +88,16 @@ void BotBrain::Process()
         SetState(State::Respawning);
         return;
     }
+    if (m_state == State::Manual)
+        return;
+    if (!m_manualMining && m_state != State::Attacking && m_state != State::Returning && now < m_autoStartAt)
+        return;
     if (m_state == State::Attacking && m_record.profession != "RAT_HUNTER") {
         ProcessAttack();
+        return;
+    }
+    if (m_manualMining) {
+        ProcessMiner();
         return;
     }
     if (m_record.profession == "RAT_HUNTER") {
@@ -183,9 +205,20 @@ void BotBrain::ProcessRatHunter()
                 SetState(State::Returning);
             break;
         case State::Returning:
-            ReturnToHome();
-            if (m_client.GetShipSE() != nullptr && !m_client.GetShipSE()->DestinyMgr()->IsWarping())
-                SetState(State::Selling);
+            if (m_client.GetShipSE() == nullptr || m_record.homeStationID == 0 ||
+                m_client.GetShipSE()->DestinyMgr()->IsWarping())
+                return;
+            if (!m_returnWarpStarted) {
+                SystemEntity* station = m_client.SystemMgr()->FindEntityByID(m_record.homeStationID);
+                if (station == nullptr)
+                    return;
+                m_client.GetShipSE()->DestinyMgr()->WarpTo(station->GetPosition(), 0);
+                m_client.SetDockStationID(m_record.homeStationID);
+                m_returnWarpStarted = true;
+                return;
+            }
+            m_returnWarpStarted = false;
+            SetState(State::Selling);
             break;
         case State::Selling:
             if (m_client.IsInSpace())
@@ -200,6 +233,36 @@ void BotBrain::ProcessRatHunter()
 
 void BotBrain::ProcessTrader()
 {
+    if (m_state == State::Returning) {
+        if (m_client.IsDocked()) {
+            m_returnWarpStarted = false;
+            SetState(State::Manual);
+            return;
+        }
+        if (!m_client.IsInSpace() || m_client.GetShipSE() == nullptr)
+            return;
+
+        DestinyManager* destiny = m_client.GetShipSE()->DestinyMgr();
+        if (destiny->IsWarping())
+            return;
+        if (!m_returnWarpStarted) {
+            SystemEntity* station = m_client.SystemMgr()->FindEntityByID(m_record.homeStationID);
+            if (station == nullptr)
+                return;
+            destiny->WarpTo(station->GetPosition(), 0);
+            m_client.SetDockStationID(m_record.homeStationID);
+            m_returnWarpStarted = true;
+            return;
+        }
+
+        m_client.DockToStation();
+        if (m_client.IsDocked()) {
+            m_returnWarpStarted = false;
+            SetState(State::Manual);
+        }
+        return;
+    }
+
     if (!m_client.IsDocked()) {
         RequestDock();
         return;
@@ -306,7 +369,18 @@ bool BotBrain::StartMining()
     m_client.SystemMgr()->GetBeltMgr()->GetList(m_record.currentBeltID, asteroids);
     if (asteroids.empty())
         return false;
-    AsteroidSE* asteroid = asteroids.front();
+
+    AsteroidSE* asteroid = nullptr;
+    for (AsteroidSE* candidate : asteroids) {
+        if (candidate != nullptr &&
+            (m_requestedAsteroidTypeID == 0 || candidate->GetTypeID() == m_requestedAsteroidTypeID)) {
+            asteroid = candidate;
+            break;
+        }
+    }
+    if (asteroid == nullptr)
+        return false;
+
     m_targetID = asteroid->GetID();
     m_client.GetShipSE()->DestinyMgr()->Orbit(asteroid, 3000);
 
@@ -381,6 +455,8 @@ void BotBrain::ProcessAttack()
 
 void BotBrain::SetManualFollow(Client& leader)
 {
+    m_manualMining = false;
+    m_returnWarpStarted = false;
     if (m_client.GetShipSE() != nullptr && leader.GetShipSE() != nullptr)
         m_client.GetShipSE()->DestinyMgr()->Follow(leader.GetShipSE(), 2500);
     SetState(State::Manual);
@@ -388,13 +464,40 @@ void BotBrain::SetManualFollow(Client& leader)
 
 void BotBrain::SetManualStay()
 {
+    m_manualMining = false;
+    m_returnWarpStarted = false;
     if (m_client.GetShipSE() != nullptr)
         m_client.GetShipSE()->DestinyMgr()->Halt();
     SetState(State::Manual);
 }
 
-void BotBrain::RequestDock() { StopMining(); SetState(State::Returning); }
-void BotBrain::RequestMine() { SetState(m_client.IsDocked() ? State::Docked : State::WarpToBelt); }
-void BotBrain::RequestAttack(uint32 targetID) { StopMining(); m_targetID = targetID; SetState(State::Attacking); }
+void BotBrain::RequestDock()
+{
+    m_manualMining = false;
+    m_returnWarpStarted = false;
+    StopMining();
+    if (m_client.IsDocked()) {
+        SetState(State::Manual);
+        return;
+    }
+    SetState(State::Returning);
+}
+
+void BotBrain::RequestMine(uint32 asteroidTypeID)
+{
+    m_manualMining = true;
+    m_returnWarpStarted = false;
+    m_requestedAsteroidTypeID = asteroidTypeID;
+    SetState(m_client.IsDocked() ? State::Docked : State::WarpToBelt);
+}
+
+void BotBrain::RequestAttack(uint32 targetID)
+{
+    m_manualMining = false;
+    m_returnWarpStarted = false;
+    StopMining();
+    m_targetID = targetID;
+    SetState(State::Attacking);
+}
 
 } // namespace PlayerBot

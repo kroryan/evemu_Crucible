@@ -17,7 +17,7 @@ public:
     void SetManualFollow(Client& leader);
     void SetManualStay();
     void RequestDock();
-    void RequestMine();
+    void RequestMine(uint32 asteroidTypeID = 0);
     void RequestAttack(uint32 targetID);
     const char* GetStateName() const;
 
@@ -40,7 +40,11 @@ private:
     Record& m_record;
     State m_state;
     uint64_t m_stateSince;
+    uint64_t m_autoStartAt;
     uint32 m_targetID;
+    uint32 m_requestedAsteroidTypeID;
+    bool m_manualMining;
+    bool m_returnWarpStarted;
 };
 
 } // namespace PlayerBot
