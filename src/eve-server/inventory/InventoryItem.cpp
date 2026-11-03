@@ -1237,6 +1237,7 @@ bool InventoryItem::Populate(Rsp_CommonGetInfo_Entry& result )
     PySafeDecRef(result.itemID);
     PySafeDecRef(result.invItem);
     result.time = GetFileTimeNow();
+    result.wallclockTime = GetFileTimeNow();
     // this is only to display item name in logs.  client ignores it
     result.description = m_data.name;
 
@@ -1297,6 +1298,12 @@ bool InventoryItem::Populate(Rsp_CommonGetInfo_Entry& result )
             result.attributes[AttrWarpSpeedMultiplier] = new PyFloat((*itr).second.get_float() /3);
         } else {
             result.attributes[(*itr).first] = (*itr).second.GetPyObject();
+        }
+    }
+
+    if (m_type.categoryID() == EVEDB::invCategories::Ship) {
+        if (result.attributes.find(AttrFighterCapacity) == result.attributes.end()) {
+            result.attributes[AttrFighterCapacity] = new PyInt(0);
         }
     }
 
