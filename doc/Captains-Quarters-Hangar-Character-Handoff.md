@@ -196,3 +196,47 @@ pending. Walking in stations is **not verified as working**.
   and planetary work. Those systems have outstanding integration tests; see
   `doc/PlayerBots-ActionPlan.md`. A successful compilation or login is not a
   claim that the PlayerBot economy or planetary production loop is complete.
+
+## User-requested completion criteria
+
+- Finish the Crucible 7.31 client investigation far enough to identify the
+  relevant client/server failure path and make any justified client changes.
+- Preserve the installed client as the untouched recovery copy. Rebuild or
+  repack the modified client and leave a ZIP containing the full client tree;
+  record its exact path and a file manifest here and in the completion report.
+- Verify that the ZIP can be listed and extracted, and record the checksums of
+  the changed client files. Do not describe the client as fixed until the
+  affected path has been confirmed working.
+- Monitor `/tmp` during extraction, decompilation, and packaging. Remove only
+  disposable generated intermediates when space is running low; keep the
+  recovery client, crash dumps, comparison builds, and final ZIP.
+
+## 2026-11-04 client binary investigation
+
+- The Crucible `script/compiled.code` index has 1,082 Python 2.7 EVE modules;
+  1,081 decompiled successfully. One unrelated Carbon `htmlwriter` module
+  defeats the decompiler parser. The three `lib/*.ccp` archives separately
+  yielded 706 modules. Native `blue.dll` source and its matching PDB are not
+  available, so the native engine cannot be rebuilt from source here.
+- The captured native fault is in `BlueAsyncRes::PrepareAsync` at
+  `blue.dll+0x1b969`. It iterates the resource notify-target pointer array and
+  calls a method through each target's vtable; the dumps show a null callback
+  or invalid callback/vtable pointer. The immediate failure is established;
+  the event that corrupts or invalidates that target is not yet proven.
+- The existing `blue.dll` CRC bypass is the standard build-360229 patch at
+  offset `0x970d2` (`0f 85` to `90 e9`). It does not overlap the failing code.
+- The client already has a reboot-required `asyncLoad` debug setting that maps
+  to `trinity.device.disableAsyncLoad`. The packaged diagnostic candidate sets
+  the absent-setting default to `0` in the device startup code and its debug
+  checkbox. This targets the failing async callback path, but station entry
+  still needs confirmation with that package before calling it fixed.
+- The installed client remains the recovery copy. The modified full-client
+  ZIP is `/tmp/EVE-Crucible-modified-client-7.31.360229.zip` (6,381,380,069
+  bytes; SHA-256
+  `84fdf05a0ade23b6ec8e51613f065887d77588dda24b2dba2b55b4797e468514`). Its
+  external full-file manifest is
+  `/tmp/EVE-Crucible-modified-client-7.31.360229.manifest.sha256` (SHA-256
+  `816cfd93125ecf7be16ced15ae8f325ed1706b4000e8fcea37acfe73498c60b3`). All
+  993 file hashes and archive CRCs passed; the changed compiled script module
+  was extracted and decrypted for verification. The installation remains
+  unchanged, and client UI testing remains pending.
