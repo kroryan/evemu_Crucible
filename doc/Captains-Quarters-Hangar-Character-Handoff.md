@@ -13,16 +13,20 @@ screen as a successful station-interior test.
   `LOADING` overlay while the client process remains alive. Verify the ship
   hangar and quarters transitions independently.
 - The installed client's `start.ini` points at `192.168.1.158:26000` with
-  premium edition. A disposable Proton prefix reached the EULA screen before
-  login; no agreement was accepted. A later launch accidentally selected
-  Proton 7 for the installed prefix, so it was immediately migrated back with
-  Proton Experimental 11's `wineboot -u`; its compatibility version now reads
-  `11.0-100`, the server target remains correct, and no game process is running.
-  Do not accept the EULA on the user's behalf.
+  premium edition. The extracted test client's `start.ini` had pointed at
+  `127.0.0.1`; it now points at the SSH server and was restarted with
+  `PROTON_USE_WINED3D=1`. Its login screen reports `192.168.1.158`, status
+  `OK`, and zero players. It is currently stopped at the EULA; no agreement
+  was accepted. Do not accept the EULA on the user's behalf.
+- A direct launch temporarily selected Proton 7 for the installed prefix. It
+  was migrated back using Proton Experimental 11's `wineboot -u`; the prefix
+  compatibility version reads `11.0-100`. No account was logged in through
+  that launch.
 - The remote `evemu-server` container is running and `evemu-db` is healthy.
   The server restarted once at 10:12 UTC on 2026-11-04. Its logs since that
   restart contain bot activity but no character-creation, paper-doll, or
-  world-space calls from the client.
+  world-space calls from the client. The current test cannot reach those
+  calls until the EULA is accepted.
 - The customization spinner occurs before `CreateCharacterWithDoll` is sent.
   Existing server traces show the two character-creation data requests
   succeeding without cache-query errors, followed by no request while the
