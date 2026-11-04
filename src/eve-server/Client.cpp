@@ -2126,9 +2126,7 @@ void Client::InitSession(int32 characterID)
     if (sDataMgr.IsStation(stationID)) {
         m_locationID = stationID;
         pSession->Clear("solarsystemid");    //must be 0 in station
-        // The active ship remains part of a docked character's session; the
-        // station client uses it to load the ship hangar and switch views.
-        pSession->SetInt("shipid", m_shipId);
+        pSession->Clear("shipid");    // must be 0 in station
         pSession->SetInt("stationid", stationID);
         pSession->SetInt("stationid2", stationID);
         pSession->SetInt("locationid", stationID);
@@ -2160,7 +2158,7 @@ void Client::UpdateSession()
     uint32 solarsystemID = m_char->solarSystemID();
     if (sDataMgr.IsStation(stationID)) {
         pSession->Clear("solarsystemid");    //must be 0 in station
-        pSession->SetInt("shipid", m_shipId);
+        pSession->Clear("shipid");    // must be 0 in station
         //pSession->Clear("worldspaceid");    //not used here (yet)
 
         pSession->SetInt("stationid", stationID);
