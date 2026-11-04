@@ -14,11 +14,13 @@ screen as a successful station-interior test.
   hangar and quarters transitions independently.
 - The installed client's `start.ini` points at `192.168.1.158:26000` with
   premium edition. The extracted test client's `start.ini` had pointed at
-  `127.0.0.1`; it now points at the SSH server and was restarted with
-  `PROTON_USE_WINED3D=1`. Its login screen reports `192.168.1.158`, status
-  `OK`, and zero players. The screen showed the EULA; the isolated test
-  process was stopped without accepting it. Do not accept the EULA on the
-  user's behalf.
+  `127.0.0.1`; it now points at the SSH server. The new
+  [Proton test launcher](../utils/dev/test_crucible_client.sh) checks the
+  target and starts the installed `bin/ExeFile.exe` with Proton 7 + WineD3D in
+  its own compatibility prefix. The installed binary reached the login screen,
+  which reports `192.168.1.158`, status `OK`, and zero players. It showed the
+  EULA; the test process exited without accepting it. Do not accept the EULA
+  on the user's behalf.
 - A direct launch temporarily selected Proton 7 for the installed prefix. It
   was migrated back using Proton Experimental 11's `wineboot -u`; the prefix
   compatibility version reads `11.0-100`. No account was logged in through
@@ -29,21 +31,25 @@ screen as a successful station-interior test.
   world-space calls from the client. The current test cannot reach those
   calls until the EULA is accepted.
 - The customization spinner occurs before `CreateCharacterWithDoll` is sent.
-  Existing server traces show the two character-creation data requests
-  succeeding without cache-query errors, followed by no request while the
-  preview remains loading. A separate trial rendered the avatar under
-  `PROTON_USE_WINED3D=1`, which makes a client renderer issue a strong lead;
-  the server has not yet been cleared by a completed client-driven creation.
+  On the local test server, four runs received only
+  `GetCharCreationInfo` and `GetCharNewExtraCreationInfo`; no later character
+  creation call arrived. The DXVK capture still showed the spinner after 30
+  seconds. A Proton 7 + `PROTON_USE_WINED3D=1` capture showed the male avatar
+  rendered on that same customization step after 20 seconds. This is a
+  reproducible renderer workaround, not yet a completed remote-server creation
+  test.
 - A Windows minidump from a failed attempt reports an access violation while
   executing `_trinity_deploy.dll`, at module offset `0x512214`. The module
   list contains Wine components. This is evidence of where the client crashed,
   not proof that Wine, a graphic asset, a character model, or a server response
   caused it. The minidump alone does not contain a useful symbolized stack.
-- The SSH server runs the same `8c8fe833` revision as this checkout and logs
-  service calls. During a reproduced quarters entry, the client reached
-  `UpdateCQMainScreen`; its news ticker then raised an SSL handshake error
-  after a redirect to `www.eveonline.com`. The client continued running, so
-  this is an observed error, not yet a proven cause of the stuck overlay.
+- The SSH checkout is at `f221c498`; the local commits after it change only
+  this documentation. The remote container reports client version `7.31` and
+  is running with a healthy database. During an earlier quarters entry, the
+  client reached `UpdateCQMainScreen`; its news ticker then raised an SSL
+  handshake error after a redirect to `www.eveonline.com`. The client
+  continued running, so this is an observed error, not a proven cause of a
+  stuck scene.
 - `Client::InitSession` and `Client::UpdateSession` both clear `shipid` while
   docked and set `worldspaceid` to the station ID. The current source matches
   the expected station session and should not be reverted without a new
@@ -84,14 +90,19 @@ screen as a successful station-interior test.
   `charMgr.GetPublicInfo(charID)` in parallel to build the avatar locally.
   Those are the server calls to trace once a character exists and the user can
   enter quarters.
-- The Crucible client's `worldspaces` bulk cache (`2001700035`) contains four
-  Establishment types (`32574`–`32577`) and four Captain's Quarters types:
-  Amarr `32578`, Gallente `32579`, Minmatar `32580`, and Caldari `32581`.
-  Each CQ entry is marked interior and unique and has a local safe position.
-  Its `entitySpawns` cache (`2002200006`) contains 330–418 static records per
-  race (Amarr 382, Gallente 330, Minmatar 418, Caldari 338). This confirms the
-  client has the local scene data; those counts do not prove that runtime
-  spawn locators, collisions, or walking work.
+- The Crucible client's `worldspaces` bulk cache (`2001700035`) contains eight
+  interior types. Four are Captain's Quarters: Amarr `32578`, Gallente `32579`,
+  Minmatar `32580`, Caldari `32581`. The other four are unpublished
+  Establishment types: Amarr `32574`, Caldari `32575`, Gallente `32576`, and
+  Minmatar `32577`. The station client code selects the CQ IDs; it has no
+  matching branch for the Establishments. Their `entitySpawns` rows exist
+  (91, 20, 56, and 2 respectively), but the safe spot is `(0,0,0)` for
+  Caldari and Minmatar Establishment. Treat these as legacy candidates until a
+  client path and valid spawn are proven.
+- CQ `entitySpawns` data has 330–418 static records per race (Amarr 382,
+  Gallente 330, Minmatar 418, Caldari 338), with client-side records for local
+  scene assets. This confirms local data is bundled; it does not prove that
+  runtime spawn locators, collisions, or walking work.
 - `UpdateCQMainScreen` registers the holoscreen UI. Its RSS ticker fetches
   `eveonline.com` externally. The observed TLS error can affect that ticker;
   it is not evidence that the world-space scene failed. The same holoscreen
@@ -113,31 +124,32 @@ screen as a successful station-interior test.
 
 ## Action plan
 
-1. **Unblock a controlled client run.** Use a dedicated test account and a
-   disposable Proton prefix. The installed client already points at the SSH
-   server. Run customization once with `PROTON_USE_WINED3D=1`, finish creating
-   a test character, and record whether the preview spinner clears. Do not
-   alter existing accounts or reset the remote database.
-2. **Separate the two loading displays.** Capture the exact screen at quarters
-   entry and inspect `cqScreensEnabled`, the full-screen loading layer, and
-   client stack traces. Compare hangar-to-quarters, quarters-to-hangar, and
-   undock independently.
-3. **Trace avatar spawn.** Correlate client and server timestamps for
-   `GetMyPaperDollData`, `GetPublicInfo`, scene spawn, and avatar render. Fix
-   server responses only if the request or returned data is wrong; otherwise
-   keep the renderer workaround isolated to the client launch configuration.
-4. **Verify every station race.** Check Caldari, Minmatar, Amarr, and Gallente
-   station type selection, local world-space assets, spawn points, collision
-   floors, pathing, holoscreens, and exit transitions. Record the first action
-   and complete error stack for each failure.
-5. **Implement non-station world spaces separately.** Capture a real
-   `worldSpaceServer` request, determine how the server resolves its type ID
-   and Macho address, then implement those exact mappings and register the
-   service. Station CQ behavior must remain independent of this work.
-6. **Deploy by verified milestone.** Build, exercise login/dock/hangar/CQ/exit/
-   undock with the Crucible client, commit and push, then deploy to
-   `krory90@192.168.1.158`. Preserve the live database and recheck its service
-   health after deployment.
+1. **Make the renderer run reproducible.** Keep the installed client pointed
+   at `192.168.1.158:26000`; test the renderer workaround in an isolated Proton
+   prefix. The screenshot comparison supports Proton 7 + WineD3D for character
+   customization. Do not accept the EULA for the user or modify account data.
+2. **Close character creation on the remote server.** After the EULA is
+   accepted by its user, create one dedicated test character and correlate
+   `GetCharCreationInfo`, `GetCharNewExtraCreationInfo`,
+   `CreateCharacterWithDoll`, and the avatar tables. Verify appearance, sculpt,
+   modifier, color, and portrait rows before entering a station.
+3. **Prove the four active CQ paths.** For Amarr, Caldari, Gallente, and
+   Minmatar, verify local scene load, avatar spawn, safe location, collision,
+   walking, interaction objects, holoscreens, CQ-to-hangar exit, and undock.
+   Distinguish the holoscreen's `loadingScreen.png` from a full-screen loading
+   overlay in each capture.
+4. **Resolve the four Establishments.** Find a real client transition or
+   runtime scene request for IDs `32574`–`32577`; verify resource path, spawn
+   locator, and navigation before deciding whether they remain reachable in
+   Crucible. Do not mark them walkable from cache rows alone.
+5. **Implement server world-space routing only for captured calls.** The
+   current station path resolves locally. If a non-station ID reaches
+   `worldSpaceServer`, capture the ID and expected type/address response, add
+   the mapping and register the service, then test both entry and exit.
+6. **Deploy verified code.** Build, exercise all reachable interiors plus
+   hangar and space transitions, commit and push, then deploy to
+   `krory90@192.168.1.158`. Preserve MariaDB and `data/market-backups/`; verify
+   container health and the deployed source revision afterward.
 
 ## Related stability and deployment notes
 
