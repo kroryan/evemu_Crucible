@@ -242,12 +242,10 @@ as working**.
 - The existing `blue.dll` CRC bypass is the standard build-360229 patch at
   offset `0x970d2` (`0f 85` to `90 e9`). It does not overlap the failing code.
 - The client already has a reboot-required `asyncLoad` debug setting that maps
-  to `trinity.device.disableAsyncLoad = not bool(asyncLoad)`. The packaged
-  diagnostic candidate sets the absent-setting default to `0` in device startup
-  and in its debug checkbox. The active server-specific client settings contain
-  no stored `asyncLoad` value, so this profile will take the new default and
-  disable asynchronous resource loading if the package is used. This is a
-  targeted workaround candidate, not a confirmed fix.
+  to `trinity.device.disableAsyncLoad = not bool(asyncLoad)`. A diagnostic
+  bundle setting its absent-setting default to `0` was tested. It stayed at a
+  1x1 startup window for more than four minutes and never contacted the server;
+  it was reverted. This setting is not a validated workaround.
 - The nine minidumps contain multiple native faults, not one universal crash:
   - Two dumps fault at `blue.dll+0x21e09`. Disassembly of the installed build
     shows this instruction checking a tree node sentinel at `[eax+0x19]`; one
@@ -263,19 +261,35 @@ as working**.
   - Four dumps fault elsewhere in Proton's `ntdll.dll`; one has a null
     instruction pointer. These remain unclassified and should not be folded
     into the Blue resource diagnosis.
-- The invalid resource-tree node and callback targets make asynchronous
-  resource lifetime/race bugs a plausible shared mechanism. They do not prove
-  that async loading is the root cause; only a run using the packaged setting
-  can establish whether disabling it prevents these failures. The installed
-  client has no matching Blue source or PDB, so the native engine cannot be
-  safely rebuilt from source here.
-- The installed client remains the recovery copy. The modified full-client
-  ZIP is `/tmp/EVE-Crucible-modified-client-7.31.360229.zip` (6,381,380,069
-  bytes; SHA-256
+- The newest `PrepareAsync` dump records `ECX=0x0a2c2594`, `EAX=0x171d2ed5`,
+  and an indirect target `EDX=0x73006500`; the vtable pointer is unaligned and
+  the call target is invalid. Two other dumps from the same function have a
+  null or unaligned vtable pointer. This confirms the immediate callback fault,
+  but not whether the initiating cause is a client timing race, a modified
+  bundle, or another invalid resource notification. Blue source and its
+  matching PDB are unavailable, so a source rebuild is not possible here.
+- A binary guard experiment was built at `/tmp/evemu-cq-guard/blue.dll`. It
+  skips null or unaligned callback vtables in `PrepareAsync`. The process loaded
+  that DLL but did not create a usable game window or reach the server, so the
+  guard was rejected and removed from the installation. Do not package it.
+- **Baseline control, 2026-11-04:** the installed files were restored to
+  `blue.dll` SHA-256
+  `3e1b60aa3056337b881971dff6d3e94237572db8f905f7b7022931557874b29c` and
+  original `script/compiled.code` SHA-256
+  `77390fd60faf2f75116dd0c9f51abaf292f66f2071718664ae2d97dc1bb6e286`.
+  On the local server, account 61 logged in as COlo Donier; the server handled
+  character selection and `paperDollServer::GetMyPaperDollData()`, and the
+  account remained online. The user confirmed reaching Quarters. There was no
+  new crash dump. The EVE window was iconified in this desktop, so no screenshot
+  proof was captured. This is one successful control run, not proof of
+  repeatable stability or a complete fix; it shows this character's Quarters
+  path can work against the current local server with the original client files.
+- The existing modified-client ZIP is only an old diagnostic candidate:
+  `/tmp/EVE-Crucible-modified-client-7.31.360229.zip` (6,381,380,069 bytes;
+  SHA-256
   `84fdf05a0ade23b6ec8e51613f065887d77588dda24b2dba2b55b4797e468514`). Its
-  external full-file manifest is
-  `/tmp/EVE-Crucible-modified-client-7.31.360229.manifest.sha256` (SHA-256
-  `816cfd93125ecf7be16ced15ae8f325ed1706b4000e8fcea37acfe73498c60b3`). All
-  993 file hashes and archive CRCs passed; the changed compiled script module
-  was extracted and decrypted for verification. The installation remains
-  unchanged, and client UI testing remains pending.
+  manifest is `/tmp/EVE-Crucible-modified-client-7.31.360229.manifest.sha256`
+  (SHA-256
+  `816cfd93125ecf7be16ced15ae8f325ed1706b4000e8fcea37acfe73498c60b3`). It
+  contains the unvalidated async-loading candidate and is not a final client
+  fix. No client files were pushed.
