@@ -43,13 +43,14 @@ screen as a successful station-interior test.
   list contains Wine components. This is evidence of where the client crashed,
   not proof that Wine, a graphic asset, a character model, or a server response
   caused it. The minidump alone does not contain a useful symbolized stack.
-- The SSH checkout is at `f221c498`; the local commits after it change only
-  this documentation. The remote container reports client version `7.31` and
-  is running with a healthy database. During an earlier quarters entry, the
-  client reached `UpdateCQMainScreen`; its news ticker then raised an SSL
-  handshake error after a redirect to `www.eveonline.com`. The client
-  continued running, so this is an observed error, not a proven cause of a
-  stuck scene.
+- The SSH checkout is now at `b0079055`. It was fast-forwarded from
+  `f221c498`; the commits in between changed only this investigation and its
+  test launcher, so the running server image did not need a rebuild or
+  restart. The container remains up with a healthy database and reports
+  client version `7.31`. During an earlier quarters entry, the client reached
+  `UpdateCQMainScreen`; its news ticker then raised an SSL handshake error
+  after a redirect to `www.eveonline.com`. The client continued running, so
+  this is an observed error, not a proven cause of a stuck scene.
 - `Client::InitSession` and `Client::UpdateSession` both clear `shipid` while
   docked and set `worldspaceid` to the station ID. The current source matches
   the expected station session and should not be reverted without a new
