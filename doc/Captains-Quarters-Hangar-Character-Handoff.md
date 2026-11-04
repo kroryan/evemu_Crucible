@@ -2,10 +2,12 @@
 
 Status: compared with the official Crucible server, this fork had changed
 docked-session `shipid` handling. The original behavior is restored, built, and
-deployed to `192.168.1.158:26000`. The user's active client remains on the
-official comparison instance at `127.0.0.1:26002`; its next start is configured
-for the patched SSH server. Client confirmation on that patched server is still
-pending. Walking in stations is **not verified as working**.
+deployed to `192.168.1.158:26000`. The client used the official comparison
+instance at `127.0.0.1:26002` during the earlier comparison; its installed
+`start.ini` now points to the patched SSH server. Later server logs show station
+and avatar-spawn RPCs from that client, but they do not prove that a scene
+rendered correctly or that walking works. Walking in stations is **not verified
+as working**.
 
 ## Environment and symptoms
 
@@ -41,8 +43,9 @@ pending. Walking in stations is **not verified as working**.
   Commit `8d463e2e` restores the official behavior in all three paths.
 - The user verified that the official comparison instance enters the quarter.
   The corrected fork was rebuilt from commit `8d463e2e` and is online at
-  `192.168.1.158:26000/26001`; the client has not yet logged into that patched
-  instance. The launcher now targets it on the next start.
+  `192.168.1.158:26000/26001`. Later logs from that host show the installed
+  client reaching the station avatar-spawn RPCs; scene rendering and walking
+  remain unverified.
 - Deployment initially exposed that the server's `.env` stores
   `EVEMU_DB_PASSWORD` while Compose did not pass it to the startup migration
   script. Commit `8c107170` passes that configured value to the server and to
@@ -55,8 +58,15 @@ pending. Walking in stations is **not verified as working**.
   that launch.
 - The remote Compose project `evemu` is running its `server` and `db` services.
   The new server reports `EVEmu Server is Online`, uses the existing
-  `evemu_db` volume, and listens on host ports `26000` and `26001`. No client
-  calls to the patched server have been recorded since its deployment.
+  `evemu_db` volume, and listens on host ports `26000` and `26001`. At 16:36 and
+  16:38 CEST, logs recorded station calls and then
+  `paperDollServer::GetMyPaperDollData` plus `charMgr::GetPublicInfo` for
+  characters `90000000` at station `60003757` and `90000152` at station
+  `60014719`, from client address `192.168.1.157`. The client issues those
+  avatar-data calls during its client-only player spawn. This proves the
+  session/scene path advanced to avatar creation, not that the avatar rendered
+  or could walk. The same sessions logged an external news-ticker TLS error;
+  that request is separate from avatar creation.
 - The customization spinner occurs before `CreateCharacterWithDoll` is sent.
   On the local test server, four runs received only
   `GetCharCreationInfo` and `GetCharNewExtraCreationInfo`; no later character
@@ -155,10 +165,11 @@ pending. Walking in stations is **not verified as working**.
 
 ## Action plan
 
-1. **Verify the patched server with the client.** On the next connection, use
-   `192.168.1.158:26000` and check character creation, selection, and the
-   quarter transition. The current open client is still connected to the
-   upstream comparison server and was left untouched.
+1. **Finish visual verification on the patched server.** Server logs already
+   show station setup and avatar-data requests from the installed client for
+   stations `60003757` and `60014719`. Confirm the character actually appears,
+   can walk, and can leave the quarter. The server logs alone cannot establish
+   those visual and movement results.
 2. **Verify character creation on the remote server.** Use a dedicated test
    account and correlate `GetCharCreationInfo`, `GetCharNewExtraCreationInfo`,
    `CreateCharacterWithDoll`, and the avatar tables. Verify appearance, sculpt,
@@ -226,10 +237,33 @@ pending. Walking in stations is **not verified as working**.
 - The existing `blue.dll` CRC bypass is the standard build-360229 patch at
   offset `0x970d2` (`0f 85` to `90 e9`). It does not overlap the failing code.
 - The client already has a reboot-required `asyncLoad` debug setting that maps
-  to `trinity.device.disableAsyncLoad`. The packaged diagnostic candidate sets
-  the absent-setting default to `0` in the device startup code and its debug
-  checkbox. This targets the failing async callback path, but station entry
-  still needs confirmation with that package before calling it fixed.
+  to `trinity.device.disableAsyncLoad = not bool(asyncLoad)`. The packaged
+  diagnostic candidate sets the absent-setting default to `0` in device startup
+  and in its debug checkbox. The active server-specific client settings contain
+  no stored `asyncLoad` value, so this profile will take the new default and
+  disable asynchronous resource loading if the package is used. This is a
+  targeted workaround candidate, not a confirmed fix.
+- The nine minidumps contain multiple native faults, not one universal crash:
+  - Two dumps fault at `blue.dll+0x21e09`. Disassembly of the installed build
+    shows this instruction checking a tree node sentinel at `[eax+0x19]`; one
+    dump has `eax == 0`, and the other has `eax == 0x75000200`, outside mapped
+    modules. These are invalid tree-node reads; the owning container and the
+    corruption source are not identified.
+  - A dump at `blue.dll+0x1b969` faults while `BlueAsyncRes::PrepareAsync`
+    reads `[eax+4]` and calls a method from a resource notify-target's vtable.
+    The target pointer is unmapped in that dump.
+  - A dump at `_trinity_deploy.dll+0x60aab8` reads `[edx+0x1c]` with `edx == 0`
+    inside another callback iteration. This is a distinct invalid callback
+    access in the native client.
+  - Four dumps fault elsewhere in Proton's `ntdll.dll`; one has a null
+    instruction pointer. These remain unclassified and should not be folded
+    into the Blue resource diagnosis.
+- The invalid resource-tree node and callback targets make asynchronous
+  resource lifetime/race bugs a plausible shared mechanism. They do not prove
+  that async loading is the root cause; only a run using the packaged setting
+  can establish whether disabling it prevents these failures. The installed
+  client has no matching Blue source or PDB, so the native engine cannot be
+  safely rebuilt from source here.
 - The installed client remains the recovery copy. The modified full-client
   ZIP is `/tmp/EVE-Crucible-modified-client-7.31.360229.zip` (6,381,380,069
   bytes; SHA-256
