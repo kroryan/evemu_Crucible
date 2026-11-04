@@ -19,6 +19,7 @@ services:
       - SEED_MARKET=${SEED_MARKET:-FALSE} # Set to TRUE to seed the market when the server starts for the first time
       # When enabled, the bootstrap seeds only Jita IV - Moon 4, in lots of 10,000.
       - RUN_WITH_GDB=${RUN_GDB:-FALSE} #Set to TRUE to run evemu with gdb automatically
+      - MARIADB_PASSWORD=${EVEMU_DB_PASSWORD:-evemu}
     stdin_open: true # Enables stdin for the container. Attach to it with 'docker attach'
     tty: true
     # cap_add: #This is required for gdb to work
@@ -35,7 +36,7 @@ services:
     environment:
       - MARIADB_RANDOM_ROOT_PASSWORD=true
       - MARIADB_USER=evemu
-      - MARIADB_PASSWORD=evemu
+      - MARIADB_PASSWORD=${EVEMU_DB_PASSWORD:-evemu}
       - MARIADB_DATABASE=evemu
     command:
       - --innodb-use-native-aio=0
