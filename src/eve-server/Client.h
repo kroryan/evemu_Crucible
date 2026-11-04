@@ -125,6 +125,9 @@ public:
     int64 GetClientID() const                           { return pSession->GetCurrentLong( "clientID" ); }
     // Initializes the account half of a server-controlled (socketless) session.
     void SetVirtualAccount(uint32 accountID, int64 role=Acct::Role::PLAYER);
+    // A socketless bot cannot complete the client's login handshake. Finish
+    // the station login state locally so it can use the normal Client APIs.
+    void FinishVirtualStationLogin();
     //int64 GetSessionID() const                          { return pSession->GetCurrentLong( "sessionID" ); }
 
     double GetCorpTaxRate()                             { return (m_char.get() != nullptr ? m_char->corpTaxRate() : 0.0); }
@@ -465,6 +468,7 @@ public:
     void CreateChar(bool set)                           { m_charCreation = set; }
 
     void AddBindID(uint32 bindID)                       { m_bindSet.emplace(bindID); }
+    void RemoveBindID(uint32 bindID)                    { m_bindSet.erase(bindID); }
 
 private:
     bool m_canThrow;

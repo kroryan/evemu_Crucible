@@ -126,8 +126,11 @@ EVEServerConfig::EVEServerConfig()
 
     playerbots.enabled = false;
     playerbots.autoProvision = true;
-    playerbots.maxBots = 60;
-    playerbots.cpuBudget = 8;
+    playerbots.maxBots = 150;
+    playerbots.maxOnlineBots = 150;
+    playerbots.spawnStationID = 60003760;
+    playerbots.portraitDir = "/app/playerbot-portraits";
+    playerbots.cpuBudget = 24;
     playerbots.respawnDelay = 300;
     playerbots.minerCycleSeconds = 300;
     playerbots.activeStartHour = 0;
@@ -540,6 +543,9 @@ bool EVEServerConfig::ProcessPlayerBots(const TiXmlElement* ele)
     AddValueParser("enabled",            playerbots.enabled);
     AddValueParser("autoProvision",      playerbots.autoProvision);
     AddValueParser("maxBots",            playerbots.maxBots);
+    AddValueParser("maxOnlineBots",      playerbots.maxOnlineBots);
+    AddValueParser("spawnStationID",     playerbots.spawnStationID);
+    AddValueParser("portraitDir",         playerbots.portraitDir);
     AddValueParser("cpuBudget",          playerbots.cpuBudget);
     AddValueParser("respawnDelay",       playerbots.respawnDelay);
     AddValueParser("minerCycleSeconds",  playerbots.minerCycleSeconds);
@@ -555,6 +561,9 @@ bool EVEServerConfig::ProcessPlayerBots(const TiXmlElement* ele)
     RemoveParser("enabled");
     RemoveParser("autoProvision");
     RemoveParser("maxBots");
+    RemoveParser("maxOnlineBots");
+    RemoveParser("spawnStationID");
+    RemoveParser("portraitDir");
     RemoveParser("cpuBudget");
     RemoveParser("respawnDelay");
     RemoveParser("minerCycleSeconds");

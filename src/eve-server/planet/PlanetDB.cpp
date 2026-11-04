@@ -441,7 +441,7 @@ void PlanetDB::SavePins(PI_CCPin* ccPin)
     std::ostringstream Inserts;
     // start the insert into command.
     Inserts << "INSERT INTO piPins";
-    Inserts << " (ccPinID, pinID, typeID, ownerID, level, latitude, longitude,";
+    Inserts << " (ccPinID, pinID, typeID, ownerID, state, level, latitude, longitude,";
     Inserts << " isCommandCenter, isLaunchable, isProcess, isStorage, isECU,";
     Inserts << " schematicID, programType, headRadius, launchTime,";
     Inserts << " cycleTime, expiryTime, installTime, lastRunTime, qtyPerCycle)";
@@ -455,7 +455,7 @@ void PlanetDB::SavePins(PI_CCPin* ccPin)
         } else {
             Inserts << ", ";
         }
-        Inserts << "(" << ccPinID << ", " << cur.first << ", " << cur.second.typeID << ", " << cur.second.ownerID << ", " << cur.second.level << ", " << cur.second.latitude << ", " << cur.second.longitude << ", ";
+        Inserts << "(" << ccPinID << ", " << cur.first << ", " << cur.second.typeID << ", " << cur.second.ownerID << ", " << (int)cur.second.state << ", " << cur.second.level << ", " << cur.second.latitude << ", " << cur.second.longitude << ", ";
         Inserts << cur.second.isCommandCenter << ", " << cur.second.isLaunchable << ", " << cur.second.isProcess << ", " << cur.second.isStorage <<", " << cur.second.isECU << ", ";
         Inserts << cur.second.schematicID << ", " << cur.second.programType << ", " << cur.second.headRadius << ", " << cur.second.lastLaunchTime;
         Inserts << ", " << cur.second.cycleTime << ", " << cur.second.expiryTime << ", " << cur.second.installTime << ", " << cur.second.lastRunTime << ", " << cur.second.qtyPerCycle << ")";
@@ -464,6 +464,7 @@ void PlanetDB::SavePins(PI_CCPin* ccPin)
     if (!first) {
         // finish creating the command.
         Inserts << " ON DUPLICATE KEY UPDATE ";
+        Inserts << " state=VALUES(state), ";
         Inserts << " schematicID=VALUES(schematicID), ";
         Inserts << " programType=VALUES(programType), ";
         Inserts << " headRadius=VALUES(headRadius),";
@@ -486,7 +487,7 @@ void PlanetDB::UpdatePins(uint32 pinID, PI_CCPin* ccPin)
     std::ostringstream Inserts;
     // start the insert into command.
     Inserts << "INSERT INTO piPins";
-    Inserts << " (ccPinID, pinID, schematicID, programType, launchTime,";
+    Inserts << " (ccPinID, pinID, state, schematicID, programType, launchTime,";
     Inserts << " cycleTime, installTime, lastRunTime, receivedInputsLastCycle, hasReceivedInputs,";
     Inserts << " latitude, longitude, qtyPerCycle, isECU, isLaunchable, isProcess)";
 
@@ -497,7 +498,7 @@ void PlanetDB::UpdatePins(uint32 pinID, PI_CCPin* ccPin)
         if (itr != ccPin->pins.end()) {
             first = false;
             Inserts << " VALUES ";
-            Inserts << "(" << ccPin->ccPinID << ", " << itr->first << ", "<< itr->second.schematicID << ", " << itr->second.programType;
+            Inserts << "(" << ccPin->ccPinID << ", " << itr->first << ", " << (int)itr->second.state << ", " << itr->second.schematicID << ", " << itr->second.programType;
             Inserts << ", " << itr->second.lastLaunchTime << ", " << itr->second.cycleTime << ", " << itr->second.installTime;
             Inserts << ", " << itr->second.lastRunTime << ", " << itr->second.receivedInputsLastCycle << ", " << itr->second.hasReceivedInputs;
             Inserts << ", " << itr->second.latitude << ", " << itr->second.longitude << ", " << itr->second.qtyPerCycle << ", " << itr->second.isECU;
@@ -511,7 +512,7 @@ void PlanetDB::UpdatePins(uint32 pinID, PI_CCPin* ccPin)
             } else {
                 Inserts << ", ";
             }
-            Inserts << "(" << ccPin->ccPinID << ", " << cur.first << ", "<< cur.second.schematicID << ", " << cur.second.programType;
+            Inserts << "(" << ccPin->ccPinID << ", " << cur.first << ", " << (int)cur.second.state << ", " << cur.second.schematicID << ", " << cur.second.programType;
             Inserts << ", " << cur.second.lastLaunchTime << ", " << cur.second.cycleTime << ", " << cur.second.installTime;
             Inserts << ", " << cur.second.lastRunTime << ", " << cur.second.receivedInputsLastCycle << ", " << cur.second.hasReceivedInputs;
             Inserts << ", " << cur.second.latitude << ", " << cur.second.longitude << ", " << cur.second.qtyPerCycle << ", " << cur.second.isECU;
@@ -522,6 +523,7 @@ void PlanetDB::UpdatePins(uint32 pinID, PI_CCPin* ccPin)
     if (!first) {
         // finish creating the command.
         Inserts << " ON DUPLICATE KEY UPDATE ";
+        Inserts << " state=VALUES(state), ";
         Inserts << " schematicID=VALUES(schematicID), ";
         Inserts << " programType=VALUES(programType), ";
         Inserts << " launchTime=VALUES(launchTime), ";
@@ -548,6 +550,7 @@ void PlanetDB::UpdateECUPin(uint32 pinID, PI_CCPin* ccPin)
     DBerror err;
     if (!sDatabase.RunQuery(err,
         "UPDATE piPins SET"
+        "  state = %d,"
         "  programType = %u,"
         "  headRadius = %f,"
         "  qtyPerCycle = %u,"
@@ -557,7 +560,7 @@ void PlanetDB::UpdateECUPin(uint32 pinID, PI_CCPin* ccPin)
         "  installTime = %lli,"
         "  lastRunTime = %lli"
         " WHERE pinID = %u",
-        itr->second.programType, itr->second.headRadius, itr->second.qtyPerCycle, itr->second.schematicID, itr->second.expiryTime,
+        (int)itr->second.state, itr->second.programType, itr->second.headRadius, itr->second.qtyPerCycle, itr->second.schematicID, itr->second.expiryTime,
         itr->second.cycleTime, itr->second.installTime, itr->second.lastRunTime, pinID))
     {
         _log(DATABASE__ERROR, "UpdateECUPin - Unable to update pin: %s", err.GetError());

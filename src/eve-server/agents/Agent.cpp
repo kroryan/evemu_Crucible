@@ -32,7 +32,9 @@
 #include "agents/Agent.h"
 #include "agents/AgentDB.h"
 #include "../Client.h"
+#include "account/AccountService.h"
 #include "../fleet/FleetService.h"
+#include "inventory/ItemFactory.h"
 #include "../system/SystemManager.h"
 #include "../standing/StandingMgr.h"
 #include "corporation/LPService.h"
@@ -150,6 +152,87 @@ void Agent::MakeOffer(uint32 charID, MissionOffer& offer)
     sMissionDataMgr.AddMissionOffer(charID, offer);
 }
 
+bool Agent::AcceptMission(Client* pClient, MissionOffer& offer)
+{
+    if (pClient == nullptr || !CanUseAgent(pClient) ||
+        !HasMission(pClient->GetCharacterID(), offer) ||
+        (offer.stateID != Mission::State::Offered && offer.stateID != Mission::State::Allocated) ||
+        offer.expiryTime < GetFileTimeNow() ||
+        pClient->GetStationID() != m_agentData.stationID)
+        return false;
+
+    if (offer.courierTypeID != 0 && offer.courierAmount != 0) {
+        sItemFactory.SetUsingClient(pClient);
+        ItemData data(offer.courierTypeID, pClient->GetCharacterID(), locTemp, flagNone,
+                      offer.courierAmount);
+        InventoryItemRef item = sItemFactory.SpawnItem(data);
+        if (item.get() == nullptr) {
+            sItemFactory.UnsetUsingClient();
+            return false;
+        }
+        item->Move(offer.originID, flagHangar, true);
+        const bool moved = item->locationID() == offer.originID && item->flag() == flagHangar;
+        if (!moved)
+            item->Delete();
+        sItemFactory.UnsetUsingClient();
+        if (!moved)
+            return false;
+    }
+
+    offer.stateID = Mission::State::Accepted;
+    offer.dateAccepted = GetFileTimeNow();
+    offer.expiryTime = GetFileTimeNow() + (30 * m_agentData.level * EvE::Time::Minute);
+    UpdateOffer(pClient->GetCharacterID(), offer);
+    SendMissionUpdate(pClient, "offer_accepted");
+    return true;
+}
+
+bool Agent::CompleteMission(Client* pClient, MissionOffer& offer)
+{
+    if (pClient == nullptr || !HasMission(pClient->GetCharacterID(), offer) ||
+        offer.stateID != Mission::State::Accepted || offer.expiryTime < GetFileTimeNow() ||
+        !pClient->IsMissionComplete(offer))
+        return false;
+
+    offer.stateID = Mission::State::Completed;
+    offer.dateCompleted = GetFileTimeNow();
+    UpdateOffer(pClient->GetCharacterID(), offer);
+    SendMissionUpdate(pClient, "completed");
+
+    if (offer.courierTypeID != 0)
+        pClient->RemoveMissionItem(offer.courierTypeID, offer.courierAmount);
+
+    if (offer.rewardItemID != 0 && offer.rewardItemQty != 0) {
+        sItemFactory.SetUsingClient(pClient);
+        ItemData data(offer.rewardItemID, pClient->GetCharacterID(), locTemp, flagNone,
+                      offer.rewardItemQty);
+        InventoryItemRef item = sItemFactory.SpawnItem(data);
+        if (item.get() != nullptr)
+            item->Move(m_agentData.stationID, flagHangar, true);
+        else
+            _log(AGENT__ERROR, "Could not create reward type %u for mission offer %u.",
+                 offer.rewardItemID, offer.offerID);
+        sItemFactory.UnsetUsingClient();
+    }
+
+    if (offer.rewardISK != 0)
+        AccountService::TransferFunds(m_agentID, pClient->GetCharacterID(), offer.rewardISK,
+                                      "Mission Reward", Journal::EntryType::AgentMissionReward,
+                                      m_agentID);
+    const double elapsedMissionTime = offer.dateCompleted - offer.dateAccepted;
+    const double bonusWindow = static_cast<double>(offer.bonusTime) * EvE::Time::Minute;
+    if (offer.bonusISK != 0 && offer.bonusTime > 0 && elapsedMissionTime >= 0.0 &&
+        elapsedMissionTime <= bonusWindow)
+        AccountService::TransferFunds(m_agentID, pClient->GetCharacterID(), offer.bonusISK,
+                                      "Mission Bonus Reward",
+                                      Journal::EntryType::AgentMissionTimeBonusReward, m_agentID);
+    if (offer.rewardLP != 0)
+        LPService::AddLP(pClient->GetCharacterID(), m_agentData.corporationID, offer.rewardLP);
+
+    UpdateStandings(pClient, Standings::MissionCompleted, offer.important);
+    return true;
+}
+
 bool Agent::HasMission(uint32 charID)
 {
     std::map<uint32, MissionOffer>::iterator itr = m_offers.find(charID);
@@ -212,6 +295,7 @@ void Agent::RemoveOffer(uint32 charID)
 {
     std::map<uint32, MissionOffer>::iterator itr = m_offers.find(charID);
     if (itr != m_offers.end()) {
+        sMissionDataMgr.RemoveMissionOffer(charID, itr->second);
         m_offers.erase(itr);
     } else {
         _log(AGENT__WARNING, "Agent::RemoveOffer() - offer not found for character %u", charID);

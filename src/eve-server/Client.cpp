@@ -152,6 +152,29 @@ void Client::SetVirtualAccount(uint32 accountID, int64 role)
     pSession->SetString("address", "virtual-bot");
 }
 
+void Client::FinishVirtualStationLogin()
+{
+    if (!IsVirtualClient() || !IsDocked())
+        return;
+
+    // Real clients clear these states as part of the station login exchange.
+    // A virtual session has no socket to acknowledge it, so leave it in the
+    // same settled station state before the bot brain requests undock.
+    m_stateTimer.Disable();
+    m_sessionTimer.Disable();
+    // Virtual station logins do not run the in-space timer processing path.
+    // Clear the login-warp invulnerability timer along with its state flag so
+    // the next real undock can start a fresh UndockInvul interval.
+    m_invulTimer.Disable();
+    m_clientState = Player::State::Idle;
+    m_login = false;
+    m_invul = false;
+    m_undock = false;
+    m_bubbleWait = false;
+    m_sessionChangeActive = false;
+    SetLoginWarpComplete();
+}
+
 Client::~Client() {
     if (!m_loaded)
         return;
@@ -964,10 +987,19 @@ void Client::SetBallPark() {
     if (pShipSE->SysBubble() == nullptr)
         m_system->AddEntity(pShipSE);
     if (!m_beyonce and !m_login and !m_undock) {
-        m_bubbleWait = true;    // wait on proc destiny msgs
-        CheckBallparkTimer();
-        SetBallParkTimer(Player::Timer::Default);    // set timer 1s to wait for beyonce
-        return;
+        if (IsVirtualClient()) {
+            // Socketless PlayerBots cannot send the normal Beyonce RPC after
+            // arriving in a new system. Acknowledge the same ballpark setup
+            // here so the regular Destiny state broadcast can finish and the
+            // gate-jump state can return to Idle. Real clients still wait for
+            // their network acknowledgement below.
+            m_beyonce = true;
+        } else {
+            m_bubbleWait = true;    // wait on proc destiny msgs
+            CheckBallparkTimer();
+            SetBallParkTimer(Player::Timer::Default);    // set timer 1s to wait for beyonce
+            return;
+        }
     }
     if (!m_setStateSent and m_beyonce) {  // MUST have beyonce before sending state data.
         pShipSE->DestinyMgr()->SendSetState();
@@ -2094,7 +2126,9 @@ void Client::InitSession(int32 characterID)
     if (sDataMgr.IsStation(stationID)) {
         m_locationID = stationID;
         pSession->Clear("solarsystemid");    //must be 0 in station
-        pSession->Clear("shipid");    //must be 0 in station
+        // The active ship remains part of a docked character's session; the
+        // station client uses it to load the ship hangar and switch views.
+        pSession->SetInt("shipid", m_shipId);
         pSession->SetInt("stationid", stationID);
         pSession->SetInt("stationid2", stationID);
         pSession->SetInt("locationid", stationID);
@@ -2126,7 +2160,7 @@ void Client::UpdateSession()
     uint32 solarsystemID = m_char->solarSystemID();
     if (sDataMgr.IsStation(stationID)) {
         pSession->Clear("solarsystemid");    //must be 0 in station
-        pSession->Clear("shipid");    //must be 0 in station
+        pSession->SetInt("shipid", m_shipId);
         //pSession->Clear("worldspaceid");    //not used here (yet)
 
         pSession->SetInt("stationid", stationID);
@@ -2172,6 +2206,8 @@ void Client::UpdateCorpSession(CorpData& data)
     pSession->SetLong("rolesAtBase", data.rolesAtBase);
     pSession->SetLong("rolesAtHQ", data.rolesAtHQ);
     pSession->SetLong("rolesAtOther", data.rolesAtOther);
+    if (sEntityList.FindClientByCharID(GetCharacterID()) == this)
+        sEntityList.AddPlayer(this);
     SendSessionChange();
 }
 

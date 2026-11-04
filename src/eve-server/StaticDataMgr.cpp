@@ -1389,6 +1389,7 @@ PyDict* StaticDataMgr::SetBPMatlType(int8 catID, uint16 typeID, uint16 prodID)
         ramMatls.clear();
         GetRamMaterials(prodID, ramMatls);
         for (auto cur : ramMatls) {
+            PyIncRef(header);
             PyPackedRow* row = new PyPackedRow(header);
                 row->SetField("quantity",        new PyInt(cur.quantity));
                 row->SetField("requiredTypeID",  new PyInt(cur.materialTypeID));
@@ -1406,6 +1407,7 @@ PyDict* StaticDataMgr::SetBPMatlType(int8 catID, uint16 typeID, uint16 prodID)
     GetRamRequirements(typeID, ramReqs);
     //GetRamRequirements(prodID, ramReqs);
     for (auto cur : ramReqs) {
+        PyIncRef(header);
         PyPackedRow* row = new PyPackedRow(header);
             row->SetField("quantity",        new PyInt(cur.quantity));
             row->SetField("requiredTypeID",  new PyInt(cur.requiredTypeID));
@@ -1493,11 +1495,15 @@ PyDict* StaticDataMgr::SetBPMatlType(int8 catID, uint16 typeID, uint16 prodID)
         PyDict* Manufacturing = new PyDict();
             Manufacturing->SetItemString("skills", skillListManuf);
             Manufacturing->SetItemString("rawMaterials", matlListManuf);
+            PyIncRef(header);
             CRowSet *rowset = new CRowSet(&header);
             PyList::const_iterator itr = extraListManuf->begin();
             for (; itr != extraListManuf->end(); ++itr) {
                 PyPackedRow* from = (*itr)->AsPackedRow();
                 PyPackedRow* into = rowset->NewRow();
+                PyIncRef(from->GetField(0));
+                PyIncRef(from->GetField(1));
+                PyIncRef(from->GetField(2));
                 into->SetField((uint32)0, from->GetField(0));
                 into->SetField((uint32)1, from->GetField(1));
                 into->SetField((uint32)2, from->GetField(2));
@@ -1537,11 +1543,15 @@ PyDict* StaticDataMgr::SetBPMatlType(int8 catID, uint16 typeID, uint16 prodID)
         PyDict* Duplicating = new PyDict();
             Duplicating->SetItemString("skills", skillListDup);
             Duplicating->SetItemString("rawMaterials", matlListDup);
+            PyIncRef(header);
             CRowSet *rowset = new CRowSet(&header);
             PyList::const_iterator itr = extraListDup->begin();
             for (; itr != extraListDup->end(); ++itr) {
                 PyPackedRow* from = (*itr)->AsPackedRow();
                 PyPackedRow* into = rowset->NewRow();
+                PyIncRef(from->GetField(0));
+                PyIncRef(from->GetField(1));
+                PyIncRef(from->GetField(2));
                 into->SetField((uint32)0, from->GetField(0));
                 into->SetField((uint32)1, from->GetField(1));
                 into->SetField((uint32)2, from->GetField(2));
@@ -1592,6 +1602,7 @@ PyDict* StaticDataMgr::SetBPMatlType(int8 catID, uint16 typeID, uint16 prodID)
     PyDecRef(mtCRowSet);
     */
 
+    PyDecRef(header);
     return rsp;
 }
 

@@ -25,6 +25,7 @@
 */
 
 #include <boost/algorithm/string.hpp>
+#include <cmath>
 #include "eve-server.h"
 
 #include "EntityList.h"
@@ -221,6 +222,19 @@ PyResult AccountService::GiveCash(PyCallArgs &call, PyInt* toID, PyFloat* amount
         call.Dump(ACCOUNT__CALL_DUMP);
     }
 
+    if (!std::isfinite(amount->value()) || amount->value() <= 0)
+        throw CustomError("Transfer amount must be positive and finite.");
+
+    uint16 toAccountKey = Account::KeyType::Cash;
+    auto key = call.byname.find("toAccountKey");
+    if (key != call.byname.end()) {
+        const int64 value = PyRep::IntegerValue(key->second);
+        if (value != 0 && (value < Account::KeyType::Cash || value > Account::KeyType::Cash7))
+            throw CustomError("Invalid destination wallet division.");
+        if (value != 0)
+            toAccountKey = value;
+    }
+
     std::string reasonStr = "DESC: ";
     if (reason.size() < 1) {
         reasonStr += "No Reason Given";
@@ -238,7 +252,9 @@ PyResult AccountService::GiveCash(PyCallArgs &call, PyInt* toID, PyFloat* amount
         amount->value(),
         reasonStr.c_str(),
         Journal::EntryType::PlayerDonation,
-        call.client->GetCharacterID()
+        call.client->GetCharacterID(),
+        Account::KeyType::Cash,
+        toAccountKey
     );
 
     return nullptr;
@@ -255,9 +271,22 @@ PyResult AccountService::GiveCashFromCorpAccount(PyCallArgs &call, PyInt* toID, 
         call.Dump(ACCOUNT__CALL_DUMP);
     }
 
+    if (!std::isfinite(amount->value()) || amount->value() <= 0)
+        throw CustomError("Transfer amount must be positive and finite.");
+    if (fromAcctKey->value() < Account::KeyType::Cash || fromAcctKey->value() > Account::KeyType::Cash7)
+        throw CustomError("Invalid source wallet division.");
+    const int64 roles = call.client->GetCorpRole();
+    const int64 divisionRole = Corp::Role::AccountCanTake1 << (fromAcctKey->value() - Account::KeyType::Cash);
+    if (!(roles & Corp::Role::Director) && !(roles & divisionRole))
+        throw UserError("CrpAccessDenied").AddFormatValue("reason", new PyString("You do not have access to that wallet"));
+
     uint16 toAcctKey = Account::KeyType::Cash;
     if (call.byname.find("toAccountKey") != call.byname.end())
         toAcctKey = PyRep::IntegerValue(call.byname.find("toAccountKey")->second);
+    if (toAcctKey == 0)
+        toAcctKey = Account::KeyType::Cash;
+    if (toAcctKey < Account::KeyType::Cash || toAcctKey > Account::KeyType::Cash7)
+        throw CustomError("Invalid destination wallet division.");
 
     std::string reason= "DESC: ";
     if (call.byname.find("reason") != call.byname.end()) {

@@ -233,55 +233,25 @@ PyResult AgentBound::DoAction(PyCallArgs &call, std::optional <PyInt*> actionID)
             case Accept:            //3
             case AcceptRemotely: {  //5
                 MissionOffer offer = MissionOffer();
-                m_agent->GetOffer(pchar->itemID(), offer);
-                offer.stateID = Mission::State::Accepted;
-                offer.dateAccepted = GetFileTimeNow();
-                offer.expiryTime = GetFileTimeNow() + (30 * m_agent->GetLevel() * EvE::Time::Minute);  // 30m per agent level  ?  test this.
-                if (offer.courierTypeID) {
-                    // add item to players hangar
-                    sItemFactory.SetUsingClient(call.client);
-                    ItemData data(offer.courierTypeID, pchar->itemID(), locTemp, flagNone, offer.courierAmount);
-                    InventoryItemRef iRef = sItemFactory.SpawnItem(data);
-                    iRef->Move(offer.originID, flagHangar, true);
-                    sItemFactory.UnsetUsingClient();
+                if (!m_agent->AcceptMission(call.client, offer)) {
+                    agentSays->SetItem(0, new PyString("This mission can no longer be accepted here."));
+                    agentSays->SetItem(1, PyStatic.NewNone());
+                    break;
                 }
-                m_agent->UpdateOffer(pchar->itemID(), offer);
-                m_agent->SendMissionUpdate(call.client, "offer_accepted");
                 agentSays->SetItem(0, new PyInt(m_agent->GetAcceptRsp(pchar->itemID())));
                 agentSays->SetItem(1, new PyInt(pchar->itemID()));
             } break;
             case Complete:              //6
             case CompleteRemotely: {    //7
-                //  need to verify all requirements have been met.
                 MissionOffer offer = MissionOffer();
-                m_agent->GetOffer(pchar->itemID(), offer);
-                offer.stateID = Mission::State::Completed;
-                offer.dateCompleted = GetFileTimeNow();
-                m_agent->UpdateOffer(pchar->itemID(), offer);
-                m_agent->SendMissionUpdate(call.client, "completed");
+                if (!m_agent->CompleteMission(call.client, offer)) {
+                    agentSays->SetItem(0, new PyString("The mission objectives are not complete."));
+                    agentSays->SetItem(1, PyStatic.NewNone());
+                    break;
+                }
+                missionCompleted = true;
                 agentSays->SetItem(0, new PyInt(m_agent->GetCompleteRsp(pchar->itemID())));
                 agentSays->SetItem(1, new PyInt(pchar->itemID()));
-                if (offer.courierTypeID) {
-                    // remove item from player possession
-                    call.client->RemoveMissionItem(offer.courierTypeID, offer.courierAmount);
-                }
-                if (offer.rewardItemID) {
-                    // add reward item to players hangar
-                    sItemFactory.SetUsingClient(call.client);
-                    ItemData data(offer.rewardItemID, pchar->itemID(), locTemp, flagNone, offer.rewardItemQty);
-                    InventoryItemRef iRef = sItemFactory.SpawnItem(data);
-                    iRef->Move(m_agent->GetStationID(), flagHangar, true);
-                    sItemFactory.UnsetUsingClient();
-                }
-                /** @todo  add fleet sharing  */
-                if (offer.rewardISK)
-                    AccountService::TransferFunds(m_agent->GetID(), pchar->itemID(), offer.rewardISK, "Mission Reward", Journal::EntryType::AgentMissionReward, m_agent->GetID());
-                if ((offer.bonusTime > 0) and (offer.bonusTime < (offer.dateAccepted - GetFileTimeNow())))
-                    AccountService::TransferFunds(m_agent->GetID(), pchar->itemID(), offer.bonusISK, "Mission Bonus Reward", Journal::EntryType::AgentMissionTimeBonusReward, m_agent->GetID());
-                /** @todo  add lp, etc, etc  */
-                if (offer.rewardLP)
-                    LPService::AddLP(pchar->itemID(), m_agent->GetCorpID(), offer.rewardLP);
-                m_agent->UpdateStandings(call.client, Standings::MissionCompleted, offer.important);
                 m_agent->RemoveOffer(pchar->itemID());
             } break;
             case Defer: {   //10

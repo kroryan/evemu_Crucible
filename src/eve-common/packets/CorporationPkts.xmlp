@@ -605,7 +605,6 @@
             <raw name="lastCorpUpdaterIDNew" />
           </tupleInline>
         </dictInlineEntry>
-        <!--
         <dictInlineEntry key="roles">
           <tupleInline>
             <raw name="rolesOld" />
@@ -630,7 +629,6 @@
             <raw name="deletedNew" />
           </tupleInline>
         </dictInlineEntry>
-        -->
       </dictInline>
     </tupleInline>
   </elementDef>

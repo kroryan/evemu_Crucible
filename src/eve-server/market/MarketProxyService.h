@@ -38,6 +38,7 @@ public:
     MarketProxyService(EVEServiceManager& mgr);
     bool PlaceBotLimitOrder(Client& client, uint32 stationID, uint32 typeID, double price,
                             uint32 quantity, bool bid, uint32 itemID, uint8 duration);
+    bool CancelBotSellOrder(Client& client, uint32 orderID);
 
 protected:
     MarketDB m_db;

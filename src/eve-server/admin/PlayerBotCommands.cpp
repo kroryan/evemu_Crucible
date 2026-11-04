@@ -9,7 +9,7 @@
 PyResult Command_bot(Client* pClient, CommandDB* db, EVEServiceManager& services, const Seperator& args)
 {
     if (args.argCount() < 2)
-        return new PyString("Usage: /bot spawn <profession> <n> | status | order <botID|all> <follow|stay|dock|mine|attack> [targetID] | dismiss <characterID> | follow | come | stay | dock | mine | attack <entityID> [botID] | fleet | corp invite [corpID] [botID] | give <typeID> <quantity> [botID] | contract <botID> [assigneeID] [reward] [destinationStationID]");
+        return new PyString("Usage: /bot spawn <profession> <n> | status | order <botID|all> <follow|stay|dock|mine|attack> [targetID] | dismiss <characterID> | follow | come | stay | dock | mine | attack <entityID> [botID] | fleet [invite|join <fleetID> [botID]|leave [botID]|order <follow|stay|dock|mine|attack> [targetID]] | corp invite [corpID] [botID] | give <typeID> <quantity> [botID] | contract <botID> [assigneeID] [reward] [destinationStationID]");
 
     const std::string action = args.arg(1);
     std::string result;
@@ -107,8 +107,52 @@ PyResult Command_bot(Client* pClient, CommandDB* db, EVEServiceManager& services
         return new PyString(result);
     }
     if (action == "fleet") {
-        sBotMgr.Fleet(*pClient, result);
-        return new PyString(result);
+        if (args.argCount() == 2 || (args.argCount() == 3 && args.arg(2) == "invite")) {
+            sBotMgr.Fleet(*pClient, result);
+            return new PyString(result);
+        }
+        if (args.argCount() >= 4 && args.arg(2) == "join") {
+            if ((args.argCount() != 4 && args.argCount() != 5) || !args.isNumber(3))
+                throw CustomError("Usage: /bot fleet join <fleetID> [botID]");
+            uint32 botID = 0;
+            if (args.argCount() == 5) {
+                if (!args.isNumber(4))
+                    throw CustomError("botID must be numeric");
+                botID = static_cast<uint32>(strtoul(args.arg(4).c_str(), nullptr, 10));
+            }
+            sBotMgr.FleetJoin(static_cast<uint32>(strtoul(args.arg(3).c_str(), nullptr, 10)), botID, result);
+            return new PyString(result);
+        }
+        if (args.arg(2) == "leave") {
+            if (args.argCount() != 3 && args.argCount() != 4)
+                throw CustomError("Usage: /bot fleet leave [botID]");
+            uint32 botID = 0;
+            if (args.argCount() == 4) {
+                if (!args.isNumber(3))
+                    throw CustomError("botID must be numeric");
+                botID = static_cast<uint32>(strtoul(args.arg(3).c_str(), nullptr, 10));
+            }
+            sBotMgr.FleetLeave(botID, 0, result);
+            return new PyString(result);
+        }
+        if (args.argCount() >= 4 && args.arg(2) == "order") {
+            if (args.argCount() > 5)
+                throw CustomError("Usage: /bot fleet order <follow|stay|dock|mine|attack> [targetID]");
+            const std::string order = args.arg(3);
+            uint32 targetID = 0;
+            if (args.argCount() == 5) {
+                if (!args.isNumber(4))
+                    throw CustomError("The order target must be numeric.");
+                targetID = static_cast<uint32>(strtoul(args.arg(4).c_str(), nullptr, 10));
+            }
+            if ((order == "attack" && (args.argCount() != 5 || targetID == 0)) ||
+                (order != "attack" && order != "follow" && order != "come" && order != "stay" &&
+                 order != "dock" && order != "mine"))
+                throw CustomError("Usage: /bot fleet order <follow|stay|dock|mine|attack> [targetID]");
+            sBotMgr.FleetOrder(*pClient, order, targetID, result);
+            return new PyString(result);
+        }
+        throw CustomError("Usage: /bot fleet [invite|join <fleetID> [botID]|leave [botID]|order <follow|stay|dock|mine|attack> [targetID]]");
     }
     if (action == "corp") {
         if (args.argCount() < 3 || args.arg(2) != "invite")
@@ -167,4 +211,13 @@ PyResult Command_bot(Client* pClient, CommandDB* db, EVEServiceManager& services
         return new PyString(result);
     }
     throw CustomError("Unknown /bot action.");
+}
+
+PyResult Command_botlocali(Client* pClient, CommandDB* db, EVEServiceManager& services, const Seperator& args)
+{
+    (void)db;
+    (void)services;
+    (void)args;
+    const std::string locations = sBotMgr.Locations();
+    return new PyString(locations);
 }

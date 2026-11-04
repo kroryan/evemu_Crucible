@@ -30,6 +30,21 @@
 #include "admin/CommandDispatcher.h"
 #include "admin/SlashService.h"
 
+namespace {
+bool IsBotLocaliCommand(const std::string& command)
+{
+    std::string::size_type start = command.find_first_not_of(" \t");
+    if (start == std::string::npos)
+        return false;
+    if (command[start] == '/')
+        ++start;
+
+    const std::string::size_type end = command.find_first_of(" \t", start);
+    return command.compare(start, end == std::string::npos ? std::string::npos : end - start,
+                           "botlocali") == 0;
+}
+}
+
 SlashService::SlashService(CommandDispatcher *cd) :
     Service("slash"),
     m_commandDispatch(cd)
@@ -45,7 +60,13 @@ PyResult SlashService::SlashCmd (PyCallArgs& call, PyWString* command)
         call.Dump(COMMAND__DUMP);
     }
 
-    return SlashCommand (call.client, command->content());
+    PyResult result = SlashCommand(call.client, command->content());
+    if (IsBotLocaliCommand(command->content()) && result.ssResult != nullptr &&
+        result.ssResult->IsString()) {
+        call.client->SendInfoModalMsg("%s", result.ssResult->AsString()->content().c_str());
+        return PyStatic.NewNone();
+    }
+    return result;
 }
 
 PyResult SlashService::SlashCmd (PyCallArgs& call, PyString* command)
@@ -55,14 +76,25 @@ PyResult SlashService::SlashCmd (PyCallArgs& call, PyString* command)
         call.Dump(COMMAND__DUMP);
     }
 
-    return SlashCommand (call.client, command->content());
+    PyResult result = SlashCommand(call.client, command->content());
+    if (IsBotLocaliCommand(command->content()) && result.ssResult != nullptr &&
+        result.ssResult->IsString()) {
+        call.client->SendInfoModalMsg("%s", result.ssResult->AsString()->content().c_str());
+        return PyStatic.NewNone();
+    }
+    return result;
 }
 
 PyResult SlashService::SlashCommand(Client * client, std::string command)
 {
-    if ((client->GetAccountRole() & Acct::Role::SLASH) != Acct::Role::SLASH) {
-        _log( COMMAND__ERROR, "%s: Client '%s' used a slash command but does not have Acct::Role::SLASH.", GetName(), client->GetName() );
-        throw CustomError ("You need to have Acct::Role::SLASH to execute commands.");
+    const int64 role = client->GetAccountRole();
+    const bool hasSlashRole = (role & Acct::Role::SLASH) == Acct::Role::SLASH;
+    const bool hasAdminRole = (role & Acct::Role::ADMIN) == Acct::Role::ADMIN;
+    const bool hasProgrammerRole = (role & Acct::Role::PROGRAMMER) == Acct::Role::PROGRAMMER;
+    if (!hasSlashRole && !hasAdminRole && !hasProgrammerRole) {
+        _log(COMMAND__ERROR, "%s: Client '%s' does not have slash, admin or programmer access.",
+             GetName(), client->GetName());
+        throw CustomError("You need a slash, admin or programmer role to execute commands.");
     }
 
     return m_commandDispatch->Execute( client, command.c_str() );

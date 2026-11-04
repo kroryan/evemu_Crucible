@@ -156,6 +156,9 @@ public:
         bool enabled;
         bool autoProvision;
         uint16 maxBots;
+        uint16 maxOnlineBots;
+        uint32 spawnStationID;
+        std::string portraitDir;
         uint16 cpuBudget;
         uint16 respawnDelay;
         uint16 minerCycleSeconds;

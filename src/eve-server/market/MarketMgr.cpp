@@ -414,7 +414,8 @@ bool MarketMgr::ExecuteBuyOrder(Client* seller, uint32 orderID, InventoryItemRef
     reason += stDataMgr.GetStationName(stationID).c_str();
     uint32 sellerWalletOwnerID = 0;
     uint8 level = seller->GetChar ()->GetSkillLevel (EvESkill::Accounting);
-    float tax = EvEMath::Market::SalesTax (sConfig.market.salesTax, level) * money;
+    float tax = std::min<float>(EvEMath::Market::SalesTax(sConfig.market.salesTax, level) * money,
+                                money);
 
     // Note: The original item that was for sale still has not been deleted up
     // until this point, because we still might need data from it to do some of
@@ -446,16 +447,6 @@ bool MarketMgr::ExecuteBuyOrder(Client* seller, uint32 orderID, InventoryItemRef
         _log(MARKET__DEBUG, "ExecuteBuyOrder - Seller is Player: Price: %.2f, Tax: %.2f", money, tax);
     }
 
-    AccountService::TransferFunds (
-        sellerWalletOwnerID,
-        corpSCC,
-        tax,
-        reason.c_str (),
-        Journal::EntryType::TransactionTax,
-        orderID,
-        accountKey
-    );
-
     // send wallet blink event and record the transaction in their journal.
     reason.clear();
     reason += "DESC:  Selling items in ";
@@ -463,9 +454,11 @@ bool MarketMgr::ExecuteBuyOrder(Client* seller, uint32 orderID, InventoryItemRef
 
     // this is fulfilling a buy order.  seller will receive isk from escrow if buyer is player or corp
     if (isPlayer or isCorp) {
-        // give the money to the seller from the escrow acct at station
+        // The escrow belongs to the station where the buyer issued the order.
+        // A remote fill can take place elsewhere, so debit the order station
+        // while delivering the purchased item at the seller's station above.
         AccountService::TransferFunds(
-            stDataMgr.GetOwnerID(stationID),
+            stDataMgr.GetOwnerID(oInfo.stationID),
             seller->GetCharacterID(),
             money,
             reason.c_str(),
@@ -487,6 +480,22 @@ bool MarketMgr::ExecuteBuyOrder(Client* seller, uint32 orderID, InventoryItemRef
             accountKey
         );
     }
+
+    // Sales tax is netted from this sale's proceeds. Credit the seller first,
+    // then debit the tax so an otherwise valid order fill does not require the
+    // seller to carry the tax amount in advance of the transaction.
+    reason.clear();
+    reason += "DESC: Paying sales tax in ";
+    reason += stDataMgr.GetStationName(stationID).c_str();
+    AccountService::TransferFunds(
+        sellerWalletOwnerID,
+        corpSCC,
+        tax,
+        reason.c_str(),
+        Journal::EntryType::TransactionTax,
+        orderID,
+        accountKey
+    );
 
     // add data to StatisticMgr
     sStatMgr.Add(Stat::iskMarket, money);

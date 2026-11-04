@@ -349,6 +349,7 @@ PyResult TradeBound::MultiAdd(PyCallArgs &call, PyList* itemIDs, PyInt* containe
         pTSes->m_tradelist.insert(pTSes->m_tradelist.end(), mTI);
         itemRef->Move(tradeContID, (EVEItemFlags)flag, true);
 
+        PyIncRef(header);
         PyPackedRow* row = new PyPackedRow(header);
             row->SetField("itemID",        new PyLong(mTI.itemID));
             row->SetField("typeID",        new PyInt(mTI.typeID));
@@ -410,6 +411,7 @@ PyResult TradeBound::List(PyCallArgs &call) {
 
     DBRowDescriptor* header = sDataMgr.CreateHeader();
     for (auto cur : pTSes->m_tradelist) {
+        PyIncRef(header);
         PyPackedRow* row = new PyPackedRow( header );
             row->SetField("itemID",        new PyLong(cur.itemID));
             row->SetField("typeID",        new PyInt(cur.typeID));
@@ -422,6 +424,7 @@ PyResult TradeBound::List(PyCallArgs &call) {
             row->SetField("customInfo",    new PyString(cur.customInfo));
         list->AddItem(row);
     }
+    PyDecRef(header);
 
     PyTuple* tuple2 = new PyTuple(1);
         tuple2->SetItem(0, list);

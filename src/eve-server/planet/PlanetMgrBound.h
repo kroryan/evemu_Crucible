@@ -49,7 +49,7 @@ protected:
     PyResult DeleteLaunch(PyCallArgs& call, PyInt* launchID);
 
 private:
-    std::map<uint32, PlanetMgrBound*> m_instances;
+    std::map<std::pair<uint32, uint32>, PlanetMgrBound*> m_instances;
 };
 
 
@@ -57,8 +57,11 @@ class PlanetMgrBound : public EVEBoundObject <PlanetMgrBound>
 {
 public:
     PlanetMgrBound(EVEServiceManager& mgr, PlanetMgrService& parent, Client* client, PlanetSE* planet);
+    ~PlanetMgrBound() override;
 
     uint32 GetPlanetID () { return this->m_planet->GetID(); }
+    uint32 GetCharacterID() const { return m_characterID; }
+    void RebindClient(Client* client);
 
 protected:
     PyResult GetPlanetResourceInfo(PyCallArgs& call);
@@ -93,5 +96,6 @@ protected:
     Colony* m_colony;
     PlanetSE* m_planet;
     PlanetMgr* m_planetMgr;
+    uint32 m_characterID;
 };
 #endif  // EVEMU_PLANET_PLANETMGR_BOUND_H_

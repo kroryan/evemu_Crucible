@@ -36,6 +36,8 @@ class ReprocessingService : public BindableService <ReprocessingService, Reproce
 {
 public:
     ReprocessingService(EVEServiceManager& mgr);
+    bool ExecutePlayerBotReprocess(Client& client, uint32 stationID,
+                                   const std::vector<uint32>& itemIDs);
 
     void BoundReleased (ReprocessingServiceBound* bound) override;
 
@@ -49,6 +51,7 @@ class ReprocessingServiceBound : public EVEBoundObject <ReprocessingServiceBound
 {
 public:
     ReprocessingServiceBound(EVEServiceManager& mgr, ReprocessingService& parent, ReprocessingDB& db, uint32 stationID);
+    bool ExecutePlayerBotReprocess(Client& client, const std::vector<uint32>& itemIDs);
 
 protected:
     PyResult GetOptionsForItemTypes(PyCallArgs& call, PyDict* typeIDs);

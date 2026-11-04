@@ -53,14 +53,9 @@ echo "Running EVEDBTool..."
 
 if [ "$SEED_MARKET" == "TRUE" ]
 then
-    IFS=',' read -r -a array <<< "$SEED_REGIONS"
-    echo "seed-saturation: $SEED_SATURATION" >> /src/sql/evedb.yaml
-    echo "seed-regions: " >> /src/sql/evedb.yaml
-    for i in "${array[@]}"
-    do
-        echo "- $i" >> /src/sql/evedb.yaml
-    done
-    /src/sql/evedbtool seed
+    echo "Seeding the Jita market only (10,000 units per item)."
+    MYSQL_PWD="$MARIADB_PASSWORD" mysql -h "$MARIADB_HOST" -P "$MARIADB_PORT" \
+        -u "$MARIADB_USER" "$MARIADB_DATABASE" < /src/sql/seed_and_clean/seed_jita_market.sql || exit 1
 fi
 
 echo "Loading all dungeons using EVEDBTool..."

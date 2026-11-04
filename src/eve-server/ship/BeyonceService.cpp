@@ -27,6 +27,7 @@
 #include "eve-server.h"
 
 #include "Client.h"
+#include "EntityList.h"
 #include "StaticDataMgr.h"
 #include "cache/ObjCacheService.h"
 #include "planet/PlanetDB.h"
@@ -36,6 +37,7 @@
 #include "ship/BeyonceService.h"
 #include "station/StationDataMgr.h"
 #include "system/BookmarkService.h"
+#include "fleet/FleetService.h"
 #include "system/Container.h"
 #include "system/DestinyManager.h"
 #include "system/SystemBubble.h"
@@ -359,7 +361,7 @@ PyResult BeyonceBound::CmdWarpToStuff(PyCallArgs &call, PyString* type, PyRep* i
         codelog(CLIENT__ERROR, "%s: Client has no destiny manager!", call.client->GetName());
         return PyStatic.NewNone();
     }
-    if (pDestiny->IsWarping()){
+    if (pDestiny->IsWarpingOrAligning()){
         call.client->SendNotifyMsg( "You are already warping");
         return PyStatic.NewNone();
     }  else if (pDestiny->AbortIfLoginWarping(true)) {
@@ -455,8 +457,29 @@ PyResult BeyonceBound::CmdWarpToStuff(PyCallArgs &call, PyString* type, PyRep* i
     //  fleet warping
     // [warptomember] char, charid, minrange
     // [warpfleettomember] char, charid, minrange, fleet=1
-        call.client->SendErrorMsg("WarpToChar is not implemented at this time.");
-        return PyStatic.NewNone();
+        Client* target = sEntityList.FindClientByCharID(toID);
+        if (target == nullptr || !target->IsInSpace() || target->GetShipSE() == nullptr) {
+            call.client->SendNotifyMsg("That character is not in space.");
+            return PyStatic.NewNone();
+        }
+        if (target->GetCharacterID() == call.client->GetCharacterID()) {
+            call.client->SendNotifyMsg("You cannot warp to your own ship.");
+            return PyStatic.NewNone();
+        }
+        if (target->GetSystemID() != call.client->GetSystemID()) {
+            call.client->SendNotifyMsg("That character is not in your solar system.");
+            return PyStatic.NewNone();
+        }
+        if (!call.client->InFleet() || !target->InFleet() ||
+            call.client->GetFleetID() != target->GetFleetID()) {
+            call.client->SendNotifyMsg("You can only warp to a member of your fleet.");
+            return PyStatic.NewNone();
+        }
+        if (fleet && (!call.client->InFleet() || !call.client->IsFleetBoss())) {
+            call.client->SendNotifyMsg("Only the fleet commander can warp the fleet to a character.");
+            return PyStatic.NewNone();
+        }
+        pSE = target->GetShipSE();
     } else {
         sLog.Error( "BeyonceService::Handle_WarpToStuff()", "Unexpected type value: '%s'.", type->content().c_str() );
         return PyStatic.NewNone();
@@ -571,11 +594,37 @@ PyResult BeyonceBound::CmdWarpToStuff(PyCallArgs &call, PyString* type, PyRep* i
         return PyStatic.NewNone();
     }
 
-    call.client->SetInvul(false);
-    call.client->SetUndock(false);
+    if (fleet) {
+        // Fleet warp-to-member is a server-side command: send the same normal
+        // Destiny warp to each online fleet member in this solar system.
+        const std::vector<Client*> members = sFltSvc.GetFleetClients(call.client->GetFleetID());
+        bool warpedAny = false;
+        for (Client* member : members) {
+            if (member == nullptr || !member->IsInSpace() || member->GetSystemID() != call.client->GetSystemID())
+                continue;
+            if (member->GetCharacterID() == toID)
+                continue;
+            ShipSE* memberShip = member->GetShipSE();
+            if (memberShip == nullptr || member->GetShip().get() == nullptr)
+                continue;
+            DestinyManager* memberDestiny = memberShip->DestinyMgr();
+            if (memberDestiny == nullptr || memberDestiny->IsWarpingOrAligning() || member->IsLoginWarping() ||
+                member->GetShip()->GetAttribute(AttrWarpScrambleStatus) > 0)
+                continue;
+            member->SetInvul(false);
+            member->SetUndock(false);
+            memberDestiny->WarpTo(warpToPoint, distance + (memberShip->GetRadius() * 2));
+            warpedAny = true;
+        }
+        if (!warpedAny)
+            call.client->SendNotifyMsg("No fleet members in this solar system can warp right now.");
+    } else {
+        call.client->SetInvul(false);
+        call.client->SetUndock(false);
 
-    distance += (call.client->GetShipSE()->GetRadius() * 2); // add ship diameter to distance
-    pDestiny->WarpTo(warpToPoint, distance);
+        distance += (call.client->GetShipSE()->GetRadius() * 2); // add ship diameter to distance
+        pDestiny->WarpTo(warpToPoint, distance);
+    }
 
     return PyStatic.NewNone();
 }
@@ -615,9 +664,13 @@ PyResult BeyonceBound::CmdWarpToStuffAutopilot(PyCallArgs &call, PyInt* destID) 
     //call.client->UpdateSession();
     //call.client->SendSessionChange();
 
-    uint16 distance = sConfig.world.apWarptoDistance;    //10km default
-    //Adding in ship and target object radius'
-    //distance += call.client->GetShipSE()->GetRadius() + pSE->GetRadius();
+    uint16 distance = sConfig.world.apWarptoDistance;
+    // Stargate autopilot warps should land directly inside the 2.5 km jump
+    // envelope. The general configured stop distance can leave a pilot a few
+    // kilometres away, where the client appears to stall or requires a manual
+    // approach. Keep the configured offset for stations and other destinations.
+    if (pSE->GetGateSE() != nullptr)
+        distance = 0;
     pDestiny->WarpTo(pSE->GetPosition(), distance, true, pSE);
 
     return PyStatic.NewNone();

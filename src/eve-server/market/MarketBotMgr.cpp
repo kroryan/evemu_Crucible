@@ -376,15 +376,9 @@ int MarketBotMgr::PlaceSellOrders(uint32 systemID) {
 }
 
 std::vector<uint32> MarketBotMgr::GetEligibleSystems() {
-    bool useStaticSystems = false; // ---marketbot update; only turn to true, for testing changes with markbot or want to have it only populate orders in one system
-    if (useStaticSystems) {
-        return { 30000142 };  // Jita (default system for testing)
-    }
-
-    std::vector<uint32> systemIDs;
-    sDataMgr.GetRandomSystemIDs(5, systemIDs); // pulls a randomized list of systems
-    codelog(MARKET__TRACE, "GetEligibleSystems(): Pulled %zu systems from StaticDataMgr", systemIDs.size());
-    return systemIDs;
+    // NPC market-maker stock is restricted to Jita; other systems develop
+    // through player and PlayerBot orders instead of automatic seeding.
+    return { 30000142 };
 }
 
 uint32 MarketBotMgr::SelectRandomItemID() {

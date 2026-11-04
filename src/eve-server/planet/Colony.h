@@ -80,6 +80,11 @@ public:
     void PrioritizeRoute(uint16 routeID, uint8 priority);
 
     uint32 GetOwner();
+    void SetClient(Client* client) { m_client = client; }
+    bool HasExtractor(uint32 pinID) const {
+        const auto pin = ccPin->pins.find(pinID);
+        return pin != ccPin->pins.end() && pin->second.isECU && pin->second.ownerID == m_ownerID;
+    }
 
     PyRep* GetColony();
     PyTuple* GetPins();
@@ -88,6 +93,7 @@ public:
     PyDict* TransferCommodities(uint32 srcID, uint32 destID, std::map< uint16, uint32 > items);
 
     bool HasColony()                                    { return (ccPin->ccPinID ? true : false); }
+    const PI_CCPin& GetNetwork() const                  { return *ccPin; }
 
     int8 GetLevel()                                     { return ccPin->level; }
     int64 GetSimTime()                                  { return m_procTime; }
@@ -97,6 +103,7 @@ private:
     PlanetSE* m_pSE;
     PI_CCPin* ccPin;
     Client* m_client;
+    uint32 m_ownerID;
 
     Timer m_colonyTimer;
 

@@ -190,22 +190,35 @@ PyRep *MarketDB::GetOrderRow(uint32 orderID) {
 }
 
 //NOTE: needs a lot of work to implement orderRange
-uint32 MarketDB::FindBuyOrder(uint32 typeID, uint32 stationID, uint32 quantity, double price) {
+uint32 MarketDB::FindBuyOrder(uint32 typeID, uint32 stationID, uint32 quantity, double price,
+                              uint32 excludedOwnerID) {
     DBQueryResult res;
     if (!sDatabase.RunQuery(res,
-        "SELECT orderID"
-        " FROM mktOrders"
-        " WHERE bid=1"
-        "  AND typeID=%u"
-        "  AND stationID=%u"
-        "  AND volRemaining >= %u"
-        "  AND price > %.2f"
-        " ORDER BY price DESC"
+        "SELECT orders.orderID"
+        " FROM mktOrders orders"
+        " JOIN staStations orderStation ON orderStation.stationID=orders.stationID"
+        " JOIN mapSolarSystems orderSystem ON orderSystem.solarSystemID=orderStation.solarSystemID"
+        " JOIN staStations sellerStation ON sellerStation.stationID=%u"
+        " JOIN mapSolarSystems sellerSystem ON sellerSystem.solarSystemID=sellerStation.solarSystemID"
+        " WHERE orders.bid=1"
+        "  AND orders.typeID=%u"
+        "  AND orders.volRemaining >= %u"
+        "  AND orders.price > %.2f"
+        "  AND orders.ownerID <> %u"
+        // Buy orders can be filled at their station regardless of advertised
+        // range, or remotely within the order's system, constellation, region.
+        "  AND (orders.stationID=%u"
+        "    OR (orders.orderRange=0 AND orderSystem.solarSystemID=sellerSystem.solarSystemID)"
+        "    OR (orders.orderRange=4 AND orderSystem.constellationID=sellerSystem.constellationID)"
+        "    OR (orders.orderRange=32767 AND orderSystem.regionID=sellerSystem.regionID))"
+        " ORDER BY orders.price DESC"
         " LIMIT 1;",
-        typeID,
         stationID,
+        typeID,
         quantity,
-        price - 0.1/*, sConfig.market.FindBuyOrder*/))
+        price - 0.1/*, sConfig.market.FindBuyOrder*/,
+        excludedOwnerID,
+        stationID))
     {
         codelog(MARKET__DB_ERROR, "Error in query: %s", res.error.c_str());
         return 0;

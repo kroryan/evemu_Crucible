@@ -20,6 +20,15 @@ class CorpRegistryBound : public EVEBoundObject <CorpRegistryBound>, public Boun
 public:
     CorpRegistryBound(EVEServiceManager &mgr, CorpRegistryService& parent, CorporationDB& db, uint32 corpID);
 
+    // Internal virtual-client entry point. It shares the real corporation DB,
+    // registration-fee, role, event and channel paths with AddCorporation.
+    static bool CreatePlayerBotCorporation(EVEServiceManager& services, CorporationDB& db,
+                                           Client& client, const std::string& name,
+                                           const std::string& ticker, uint32& corpID);
+    static bool EnsurePlayerBotCorporationLogo(EVEServiceManager& services,
+                                               uint32 corpID, uint32 creatorID);
+    bool AcceptPlayerBotApplication(Client& founder, Client& applicant, const std::string& text);
+
     uint32 GetCorporationID() const { return this->m_corpID; }
 
     void BoundReleased (OfficeSparseBound* bound) override;
@@ -53,7 +62,8 @@ protected:
     PyResult UpdateDivisionNames(PyCallArgs& call,
         PyRep* div1, PyRep* div2, PyRep* div3, PyRep* div4, PyRep* div5, PyRep* div6, PyRep* div8,
         PyRep* wal1, PyRep* wal2, PyRep* wal3, PyRep* wal4, PyRep* wal5, PyRep* wal6, PyRep* wal7);
-    PyResult UpdateCorporation(PyCallArgs& call, PyRep* description, PyRep* url, PyFloat* tax);
+    PyResult UpdateCorporation(PyCallArgs& call, PyRep* description, PyRep* url, PyFloat* tax,
+                               std::optional<PyInt*> clientOption);
     PyResult UpdateLogo(PyCallArgs& call,
         PyRep* shape1, PyRep* shape2, PyRep* shape3,
         PyRep* color1, PyRep* color2, PyRep* color3,

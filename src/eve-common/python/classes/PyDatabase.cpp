@@ -130,8 +130,9 @@ CRowSet::CRowSet( DBRowDescriptor** rowDesc )
 
 PyPackedRow* CRowSet::NewRow()
 {
-    //DBRowDescriptor* rowDesc = _GetRowDesc();
-    PyPackedRow* row = new PyPackedRow( _GetRowDesc() );
+    DBRowDescriptor* rowDesc = _GetRowDesc();
+    PyIncRef(rowDesc); // every packed row owns a reference to its header
+    PyPackedRow* row = new PyPackedRow(rowDesc);
 
     list().AddItem( row );
     return row;
@@ -179,8 +180,9 @@ CIndexedRowSet::CIndexedRowSet( DBRowDescriptor** rowDesc )
 
 PyPackedRow* CIndexedRowSet::NewRow( PyRep* key )
 {
-    //DBRowDescriptor* rowDesc = _GetRowDesc();
-    PyPackedRow* row = new PyPackedRow( _GetRowDesc() );
+    DBRowDescriptor* rowDesc = _GetRowDesc();
+    PyIncRef(rowDesc); // the rowset and every row retain their own references
+    PyPackedRow* row = new PyPackedRow(rowDesc);
 
     dict().SetItem( key , row );
     return row;
@@ -207,7 +209,9 @@ PyDict* CIndexedRowSet::_CreateKeywords(DBRowDescriptor* rowDesc)
 
     PyDict* keywords = new PyDict();
     keywords->SetItemString( "header", rowDesc );
-    keywords->SetItemString( "columnName", rowDesc->GetColumnName(0) );
+    PyString* columnName = rowDesc->GetColumnName(0);
+    PyIncRef(columnName);
+    keywords->SetItemString( "columnName", columnName );
 
     return keywords;
 }
@@ -224,6 +228,7 @@ CFilterRowSet::CFilterRowSet( DBRowDescriptor** rowDesc )
 CRowSet* CFilterRowSet::NewRowset( PyRep* key )
 {
     DBRowDescriptor* rowDesc = _GetRowDesc();
+    PyIncRef(rowDesc);
     CRowSet* row = new CRowSet( &rowDesc );
 
     dict().SetItem( key , row );
@@ -251,7 +256,9 @@ PyDict* CFilterRowSet::_CreateKeywords(DBRowDescriptor* rowDesc)
 
     PyDict* keywords = new PyDict();
     keywords->SetItemString( "header", rowDesc );
-    keywords->SetItemString( "columnName", rowDesc->GetColumnName(0) );
+    PyString* columnName = rowDesc->GetColumnName(0);
+    PyIncRef(columnName);
+    keywords->SetItemString( "columnName", columnName );
 
     return keywords;
 }

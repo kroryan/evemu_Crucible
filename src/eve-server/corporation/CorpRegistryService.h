@@ -40,6 +40,7 @@ public:
     CorpRegistryService(EVEServiceManager& mgr);
 
     void BoundReleased (CorpRegistryBound* bound) override;
+    bool AcceptPlayerBotApplication(uint32 corpID, Client& founder, Client& applicant, const std::string& text);
 
 protected:
     CorporationDB m_db;

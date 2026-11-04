@@ -19,7 +19,15 @@ public:
         if (!result.GetRow(row))
             return false;
         SetVirtualAccount(row.GetUInt(0));
-        return SelectCharacter(characterID);
+        if (!SelectCharacter(characterID))
+            return false;
+
+        // Real clients acknowledge the ballpark handshake through Beyonce.
+        // A socketless virtual pilot cannot send that RPC, so acknowledge it
+        // here and let Client::SetBallPark perform the normal state setup.
+        SetBeyonce(true);
+        FinishVirtualStationLogin();
+        return true;
     }
 };
 

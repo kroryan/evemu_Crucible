@@ -21,6 +21,42 @@
 #include "alliance/AllianceDB.h"
 #include "alliance/AllianceBound.h"
 
+namespace {
+
+struct PlayerBotCorporationLogo {
+    int32 shape1;
+    int32 shape2;
+    int32 shape3;
+    int32 color1;
+    int32 color2;
+    int32 color3;
+};
+
+PlayerBotCorporationLogo MakePlayerBotCorporationLogo(uint32 creatorID)
+{
+    // These are legacy EVE corporation-symbol and palette identifiers. Each
+    // roster gets a deterministic variation so a restart preserves its logo.
+    static const PlayerBotCorporationLogo logos[] = {
+        {539, 520, 461, 672, 675, 672},
+        {437, 456, 478, 674, 677, 677},
+        {539, 456, 478, 672, 677, 675},
+        {437, 520, 461, 674, 675, 672}
+    };
+    return logos[creatorID % (sizeof(logos) / sizeof(logos[0]))];
+}
+
+void InvalidateCorporationLogoCache(EVEServiceManager& services)
+{
+    ObjCacheService* cache = services.Lookup<ObjCacheService>("objectCaching");
+    if (cache == nullptr)
+        return;
+    PyString* key = new PyString("config.BulkData.tickernames");
+    cache->InvalidateCache(key);
+    PySafeDecRef(key);
+}
+
+} // namespace
+
 /*
  * CORP__ERROR
  * CORP__WARNING
@@ -137,6 +173,139 @@ CorpRegistryBound::CorpRegistryBound(EVEServiceManager& mgr, CorpRegistryService
 
     this->m_cache = this->GetServiceManager().Lookup <ObjCacheService>("objectCaching");
     this->m_lsc = this->GetServiceManager().Lookup <LSCService>("LSC");
+}
+
+bool CorpRegistryBound::CreatePlayerBotCorporation(EVEServiceManager& services, CorporationDB& db,
+                                                   Client& client, const std::string& name,
+                                                   const std::string& ticker, uint32& corpID)
+{
+    corpID = 0;
+    if (!client.IsVirtualClient() || !client.IsDocked() || client.GetStationID() == 0 ||
+        client.GetChar().get() == nullptr || name.empty() || ticker.empty() ||
+        client.GetBalance(Account::CreditType::ISK) < sConfig.rates.corpCost ||
+        db.IsTickerTaken(ticker))
+        return false;
+
+    ObjCacheService* cache = services.Lookup<ObjCacheService>("objectCaching");
+    LSCService* lsc = services.Lookup<LSCService>("LSC");
+    if (cache == nullptr || lsc == nullptr)
+        return false;
+
+    Call_AddCorporation args;
+    args.corpName = name;
+    args.corpTicker = ticker;
+    args.description = "Player-run New Eden corporation. Recruiting pilots for trade, industry and security.";
+    args.url = "";
+    args.taxRate = 0.05;
+    const PlayerBotCorporationLogo logo = MakePlayerBotCorporationLogo(client.GetCharacterID());
+    args.shape1 = new PyInt(logo.shape1);
+    args.shape2 = new PyInt(logo.shape2);
+    args.shape3 = new PyInt(logo.shape3);
+    args.color1 = new PyInt(logo.color1);
+    args.color2 = new PyInt(logo.color2);
+    args.color3 = new PyInt(logo.color3);
+    args.typeface = new PyInt(0);
+    args.applicationEnabled = 1;
+
+    PyString* cacheName = new PyString("config.StaticOwners");
+    cache->InvalidateCache(cacheName);
+    PySafeDecRef(cacheName);
+
+    if (!db.AddCorporation(args, &client, corpID) || !IsPlayerCorp(corpID)) {
+        corpID = 0;
+        return false;
+    }
+    InvalidateCorporationLogoCache(services);
+
+    db.CreateTitleData(corpID);
+    const std::string reason = "DESC: PlayerBot corporation registration: " + name + " (" + ticker + ")";
+    AccountService::TransferFunds(
+        client.GetCharacterID(), db.GetStationOwner(client.GetStationID()),
+        sConfig.rates.corpCost, reason,
+        Journal::EntryType::CorporationRegistrationFee, corpID,
+        Account::KeyType::Cash, Account::KeyType::Cash, &client);
+    db.AddItemEvent(corpID, client.GetCharacterID(), Corp::EventType::CreatedCorporation);
+    lsc->CreateSystemChannel(corpID);
+
+    const uint32 oldCorpID = client.GetCorporationID();
+    CorpData data = CorpData();
+    data.name = name;
+    data.ticker = ticker;
+    data.taxRate = args.taxRate;
+    data.baseID = client.GetLocationID();
+    data.corpHQ = client.GetLocationID();
+    data.corporationID = corpID;
+    data.corpAccountKey = Account::KeyType::Cash;
+    data.corpRole = Corp::Role::Admin;
+    data.rolesAtAll = Corp::Role::Admin;
+    data.rolesAtBase = Corp::Role::Admin;
+    data.rolesAtHQ = Corp::Role::Admin;
+    data.rolesAtOther = Corp::Role::Admin;
+    data.grantableRoles = Corp::Role::Admin;
+    data.grantableRolesAtBase = Corp::Role::Admin;
+    data.grantableRolesAtHQ = Corp::Role::Admin;
+    data.grantableRolesAtOther = Corp::Role::Admin;
+    client.GetChar()->JoinCorporation(data);
+    lsc->CharacterLogin(&client);
+
+    OnCorporationChanged change;
+    change.corpID = corpID;
+    if (db.CreateCorporationCreatePacket(change, oldCorpID, corpID)) {
+        PyTuple* packet = change.Encode();
+        // Virtual bot clients have no socket to drain their notification
+        // queue. The station multicast is still useful to connected pilots.
+        if (!client.IsVirtualClient()) {
+            client.SendNotification("OnCorporationChanged", "clientID", &packet);
+            PyIncRef(packet);
+        }
+        sEntityList.Multicast("OnCorporationChanged", "stationid", &packet,
+                              NOTIF_DEST__LOCATION, client.GetLocationID());
+    }
+    return true;
+}
+
+bool CorpRegistryBound::EnsurePlayerBotCorporationLogo(EVEServiceManager& services,
+                                                       uint32 corpID, uint32 creatorID)
+{
+    if (corpID == 0 || creatorID == 0)
+        return false;
+
+    DBQueryResult current;
+    if (!sDatabase.RunQuery(current,
+        "SELECT creatorID, corporationType, IFNULL(shape1, 0), IFNULL(shape2, 0), "
+        "IFNULL(shape3, 0), IFNULL(color1, 0), IFNULL(color2, 0), IFNULL(color3, 0) "
+        "FROM crpCorporation WHERE corporationID=%u", corpID)) {
+        codelog(CORP__DB_ERROR, "Unable to inspect PlayerBot corporation logo %u: %s",
+                corpID, current.error.c_str());
+        return false;
+    }
+
+    DBResultRow row;
+    if (!current.GetRow(row) || row.GetUInt(0) != creatorID || row.GetUInt(1) != 2)
+        return false;
+    bool hasLogo = false;
+    for (uint32 column = 2; column < 8; ++column)
+        hasLogo = hasLogo || row.GetInt(column) != 0;
+    if (hasLogo)
+        return true;
+
+    const PlayerBotCorporationLogo logo = MakePlayerBotCorporationLogo(creatorID);
+    DBerror error;
+    if (!sDatabase.RunQuery(error,
+        "UPDATE crpCorporation SET shape1=%d, shape2=%d, shape3=%d, color1=%d, color2=%d, color3=%d "
+        "WHERE corporationID=%u AND creatorID=%u AND corporationType=2 "
+        "AND IFNULL(shape1, 0)=0 AND IFNULL(shape2, 0)=0 AND IFNULL(shape3, 0)=0 "
+        "AND IFNULL(color1, 0)=0 AND IFNULL(color2, 0)=0 AND IFNULL(color3, 0)=0",
+        logo.shape1, logo.shape2, logo.shape3, logo.color1, logo.color2, logo.color3,
+        corpID, creatorID)) {
+        codelog(CORP__DB_ERROR, "Unable to assign PlayerBot corporation logo %u: %s",
+                corpID, error.c_str());
+        return false;
+    }
+
+    InvalidateCorporationLogoCache(services);
+    sLog.Green("PlayerBot", "Assigned a persistent EVE logo to bot corporation %u.", corpID);
+    return true;
 }
 
 PyResult CorpRegistryBound::GetLocationalRoles(PyCallArgs &call)
@@ -727,9 +896,24 @@ PyResult CorpRegistryBound::UpdateTitles(PyCallArgs &call, PyObject* titles) {
     return nullptr;
 }
 
-PyResult CorpRegistryBound::UpdateCorporation(PyCallArgs &call, PyRep* description, PyRep* url, PyFloat* tax) {
+PyResult CorpRegistryBound::UpdateCorporation(PyCallArgs &call, PyRep* description, PyRep* url, PyFloat* tax,
+                                               std::optional<PyInt*> clientOption) {
     _log(CORP__CALL, "CorpRegistryBound::Handle_UpdateCorporation() size=%lli", call.tuple->size());
     call.Dump(CORP__CALL_DUMP);
+    // Crucible clients send a fourth integer. Its meaning has not yet been
+    // established; accept it without changing unrelated corporation fields.
+    (void)clientOption;
+    if (call.client == nullptr || call.client->GetCorporationID() != m_corpID ||
+        (m_db.GetCorporationCEO(m_corpID) != call.client->GetCharacterID() &&
+         (call.client->GetCorpRole() & Corp::Role::Director) == 0)) {
+        if (call.client != nullptr)
+            call.client->SendErrorMsg("Only a corporation director or CEO can update these settings.");
+        return PyStatic.NewNone();
+    }
+    if (!std::isfinite(tax->value()) || tax->value() < 0.0 || tax->value() > 1.0) {
+        call.client->SendErrorMsg("The corporation tax rate must be between 0% and 100%.");
+        return PyStatic.NewNone();
+    }
     Notify_IntRaw notif;
     notif.key = m_corpID;
     notif.data = new PyDict();
@@ -742,13 +926,25 @@ PyResult CorpRegistryBound::UpdateCorporation(PyCallArgs &call, PyRep* descripti
 
     // Only send notification if it is needed...
     if (notif.data->items.size()) {
+        std::vector<Client*> members;
+        sEntityList.GetCorpClients(members, m_corpID);
+        for (Client* member : members) {
+            if (member == nullptr || member->GetChar().get() == nullptr)
+                continue;
+            CorpData data = member->GetChar()->GetCorpData();
+            data.taxRate = tax->value();
+            member->GetChar()->UpdateCorpData(data);
+        }
         /** @todo update this to use CorpNotify() */
         MulticastTarget mct;
         mct.corporations.insert(notif.key);
         PyTuple * answer = notif.Encode();
+        PyIncRef(answer); // Multicast consumes one reference; the direct send consumes the other.
         sEntityList.Multicast("OnCorporationChanged", "corpid", &answer, mct);
         call.client->SendNotification("OnCorporationChanged", "clientID", &answer);
     }
+
+    PyDecRef(notif.data);
 
     return PyStatic.NewNone();
 }
@@ -1570,6 +1766,8 @@ PyResult CorpRegistryBound::UpdateApplicationOffer(PyCallArgs &call, PyInt* char
             data.grantableRolesAtHQ = Corp::Role::Member;
             data.grantableRolesAtOther = Corp::Role::Member;
             data.corporationID = m_corpID;
+        CorporationDB::GetCorpData(data);
+        data.baseID = data.corpHQ;
         Client* recruit = sEntityList.FindClientByCharID(ocmc.charID);   // this returns nullptr for offline chars
         if (recruit != nullptr) {
             recruit->GetChar()->JoinCorporation(data);
@@ -1597,6 +1795,90 @@ PyResult CorpRegistryBound::UpdateApplicationOffer(PyCallArgs &call, PyInt* char
         pClient->SendNotification("OnCorporationApplicationChanged", "clientID", ocac.Encode(), false);
 
     return nullptr;
+}
+
+bool CorpRegistryBound::AcceptPlayerBotApplication(Client& founder, Client& applicant, const std::string& text)
+{
+    // Only corporations founded by this server's registered bots may use
+    // automatic recruitment. Never use it to move a CEO out of a player corp.
+    if (founder.GetCorporationID() != m_corpID || applicant.GetCorporationID() == m_corpID ||
+        applicant.GetChar().get() == nullptr ||
+        (IsPlayerCorp(applicant.GetCorporationID()) &&
+         m_db.GetCorporationCEO(applicant.GetCorporationID()) == applicant.GetCharacterID()))
+        return false;
+
+    DBQueryResult check;
+    if (!sDatabase.RunQuery(check,
+        "SELECT c.ceoID, EXISTS(SELECT 1 FROM botCharacters b WHERE b.characterID=c.ceoID) "
+        "FROM crpCorporation c JOIN botCharacters founder ON founder.characterID=c.creatorID "
+        "WHERE c.corporationID=%u AND c.creatorID=%u "
+        "AND NOT EXISTS(SELECT 1 FROM botCharacters applicant WHERE applicant.characterID=%u)",
+        m_corpID, founder.GetCharacterID(), applicant.GetCharacterID()))
+        return false;
+    DBResultRow row;
+    if (!check.GetRow(row))
+        return false;
+    const uint32 oldCEO = row.GetUInt(0);
+    const bool botCEO = row.GetBool(1);
+
+    Corp::ApplicationInfo application = Corp::ApplicationInfo();
+    application.charID = applicant.GetCharacterID();
+    application.corpID = m_corpID;
+    application.appText = text;
+    if (!m_db.GetCurrentApplicationInfo(application) ||
+        application.status != Corp::AppStatus::AppliedByCharacter)
+        return false;
+
+    PyDict* named = new PyDict();
+    PyCallArgs call(&founder, new PyTuple(0), named);
+    PyDecRef(named);
+    PyInt* characterID = new PyInt(applicant.GetCharacterID());
+    PyString* message = new PyString(text);
+    PyInt* status = new PyInt(Corp::AppStatus::AcceptedByCorporation);
+    UpdateApplicationOffer(call, characterID, message, status, nullptr);
+    PyDecRef(characterID);
+    PyDecRef(message);
+    PyDecRef(status);
+    if (applicant.GetCorporationID() != m_corpID)
+        return false;
+
+    if (!botCEO)
+        return true;
+
+    // Compare-and-set the CEO so an existing human CEO cannot be replaced.
+    DBerror error;
+    if (!sDatabase.RunQuery(error,
+        "UPDATE crpCorporation SET ceoID=%u WHERE corporationID=%u AND ceoID=%u "
+        "AND EXISTS(SELECT 1 FROM botCharacters WHERE characterID=%u)",
+        applicant.GetCharacterID(), m_corpID, oldCEO, oldCEO) ||
+        m_db.GetCorporationCEO(m_corpID) != applicant.GetCharacterID())
+        return true;
+
+    CorpData promoted = applicant.GetChar()->GetCorpData();
+    promoted.corpRole = promoted.rolesAtAll = promoted.rolesAtBase = promoted.rolesAtHQ =
+        promoted.rolesAtOther = promoted.grantableRoles = promoted.grantableRolesAtBase =
+        promoted.grantableRolesAtHQ = promoted.grantableRolesAtOther = Corp::Role::Admin;
+    if (CharacterDB::SaveCorpData(applicant.GetCharacterID(), promoted))
+        applicant.GetChar()->UpdateCorpData(promoted);
+    else
+        sLog.Error("PlayerBot", "Could not persist CEO roles for character %u in corporation %u.",
+                   applicant.GetCharacterID(), m_corpID);
+
+    CorpData demoted;
+    if (CharacterDB::GetCharCorpData(oldCEO, demoted) && demoted.corporationID == m_corpID) {
+        demoted.corpRole = demoted.rolesAtAll = demoted.rolesAtBase = demoted.rolesAtHQ =
+            demoted.rolesAtOther = demoted.grantableRoles = demoted.grantableRolesAtBase =
+            demoted.grantableRolesAtHQ = demoted.grantableRolesAtOther = Corp::Role::Member;
+        if (CharacterDB::SaveCorpData(oldCEO, demoted)) {
+            Client* previous = sEntityList.FindClientByCharID(oldCEO);
+            if (previous != nullptr && previous->GetChar().get() != nullptr)
+                previous->GetChar()->UpdateCorpData(demoted);
+        }
+    }
+    m_db.AddItemEvent(m_corpID, oldCEO, Corp::EventType::LeftCEOPositionOfCorporation);
+    m_db.AddItemEvent(m_corpID, applicant.GetCharacterID(), Corp::EventType::BecameCEOOfCorporation);
+    sLog.Green("PlayerBot", "%s became CEO of bot-founded corporation %u.", applicant.GetName(), m_corpID);
+    return true;
 }
 
 PyResult CorpRegistryBound::DeleteApplication(PyCallArgs & call, PyInt* corporationID, PyInt* characterID)
@@ -1635,57 +1917,57 @@ void CorpRegistryBound::FillOCApplicationChange(OnCorporationApplicationChanged&
     //  ? (PyRep*)new PyInt(x) : PyStatic.NewNone();
     if (Old.valid) {
         OCAC.applicationIDOld = new PyInt(Old.appID);
-        //OCAC.applicationDateTimeOld = new PyLong(Old.appTime);
+        OCAC.applicationDateTimeOld = new PyLong(Old.appTime);
         OCAC.applicationTextOld = new PyString(Old.appText);
         OCAC.characterIDOld = new PyInt(Old.charID);
         OCAC.corporationIDOld = new PyInt(Old.corpID);
-        //OCAC.deletedOld = new PyInt(Old.deleted);
-        //OCAC.grantableRolesOld = new PyLong(Old.grantRole);
+        OCAC.deletedOld = new PyInt(Old.deleted);
+        OCAC.grantableRolesOld = new PyLong(Old.grantRole);
         if (Old.lastCID) {
             OCAC.lastCorpUpdaterIDOld = new PyInt(Old.lastCID);
         } else {
             OCAC.lastCorpUpdaterIDOld = PyStatic.NewNone();
         }
-        //OCAC.rolesOld = new PyLong(Old.role);
+        OCAC.rolesOld = new PyLong(Old.role);
         OCAC.statusOld = new PyInt(Old.status);
     } else {
         OCAC.applicationIDOld = PyStatic.NewNone();
-        //OCAC.applicationDateTimeOld = PyStatic.NewNone();
+        OCAC.applicationDateTimeOld = PyStatic.NewNone();
         OCAC.applicationTextOld = PyStatic.NewNone();
         OCAC.characterIDOld = PyStatic.NewNone();
         OCAC.corporationIDOld = PyStatic.NewNone();
-        //OCAC.deletedOld = PyStatic.NewNone();
-        //OCAC.grantableRolesOld = PyStatic.NewNone();
+        OCAC.deletedOld = PyStatic.NewNone();
+        OCAC.grantableRolesOld = PyStatic.NewNone();
         OCAC.lastCorpUpdaterIDOld = PyStatic.NewNone();
-        //OCAC.rolesOld = PyStatic.NewNone();
+        OCAC.rolesOld = PyStatic.NewNone();
         OCAC.statusOld = PyStatic.NewNone();
     }
 
     if (New.valid) {
         OCAC.applicationIDNew = new PyInt(New.appID);
-        //OCAC.applicationDateTimeNew = new PyLong(New.appTime);
+        OCAC.applicationDateTimeNew = new PyLong(New.appTime);
         OCAC.applicationTextNew = new PyString(New.appText);
         OCAC.characterIDNew = new PyInt(New.charID);
         OCAC.corporationIDNew = new PyInt(New.corpID);
-        //OCAC.deletedNew = new PyInt(New.deleted);
-        //OCAC.grantableRolesNew = new PyLong(New.grantRole);
+        OCAC.deletedNew = new PyInt(New.deleted);
+        OCAC.grantableRolesNew = new PyLong(New.grantRole);
         if (New.lastCID) {
             OCAC.lastCorpUpdaterIDNew = new PyInt(New.lastCID);
         } else {
             OCAC.lastCorpUpdaterIDNew = PyStatic.NewNone();
         }
-        //OCAC.rolesNew = new PyLong(New.role);
+        OCAC.rolesNew = new PyLong(New.role);
         OCAC.statusNew = new PyInt(New.status);
     } else {
         OCAC.applicationIDNew = PyStatic.NewNone();
-        //OCAC.applicationDateTimeNew = PyStatic.NewNone();
+        OCAC.applicationDateTimeNew = PyStatic.NewNone();
         OCAC.applicationTextNew = PyStatic.NewNone();
         OCAC.characterIDNew = PyStatic.NewNone();
         OCAC.corporationIDNew = PyStatic.NewNone();
-        //OCAC.deletedNew = PyStatic.NewNone();
-        //OCAC.grantableRolesNew = PyStatic.NewNone();
+        OCAC.deletedNew = PyStatic.NewNone();
+        OCAC.grantableRolesNew = PyStatic.NewNone();
         OCAC.lastCorpUpdaterIDNew = PyStatic.NewNone();
-        //OCAC.rolesNew = PyStatic.NewNone();
+        OCAC.rolesNew = PyStatic.NewNone();
         OCAC.statusNew = PyStatic.NewNone();
     }
 }

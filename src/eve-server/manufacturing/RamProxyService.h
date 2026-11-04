@@ -29,10 +29,19 @@
 
 #include "services/Service.h"
 
+class Client;
+class Call_InstallJob;
+class Call_CompleteJob;
 
 class RamProxyService : public Service <RamProxyService> {
 public:
     RamProxyService();
+
+    // Virtual PlayerBots enter the same validated manufacturing handlers as
+    // network clients; these wrappers only construct the normal Macho call.
+    PyResult ExecutePlayerBotInstallJob(Client& client, const Call_InstallJob& args,
+                                        bool quoteOnly, double authorizedCost = 0.0);
+    PyResult ExecutePlayerBotCompleteJob(Client& client, const Call_CompleteJob& args);
 
 private:
     PyResult GetJobs2(PyCallArgs& call, PyInt* ownerID, PyBool* completed);

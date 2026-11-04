@@ -71,6 +71,31 @@ void ReprocessingService::BoundReleased (ReprocessingServiceBound* bound) {
 
 }
 
+bool ReprocessingService::ExecutePlayerBotReprocess(Client& client, uint32 stationID,
+                                                    const std::vector<uint32>& itemIDs)
+{
+    PyInt* bindParameters = new PyInt(stationID);
+    BoundDispatcher* bound = BindObject(&client, bindParameters);
+    PySafeDecRef(bindParameters);
+    if (bound == nullptr)
+        return false;
+
+    const BoundID boundID = bound->GetBoundID();
+    bound->NewReference(&client);
+    bool reprocessed = false;
+    try {
+        reprocessed = static_cast<ReprocessingServiceBound*>(bound)
+            ->ExecutePlayerBotReprocess(client, itemIDs);
+    } catch (...) {
+        client.services().ClearBoundObject(boundID, &client);
+        client.RemoveBindID(boundID);
+        throw;
+    }
+    client.services().ClearBoundObject(boundID, &client);
+    client.RemoveBindID(boundID);
+    return reprocessed;
+}
+
 ReprocessingServiceBound::ReprocessingServiceBound(EVEServiceManager& mgr, ReprocessingService& parent, ReprocessingDB& db, uint32 stationID) :
     EVEBoundObject(mgr, parent),
     m_db(db),
@@ -87,6 +112,36 @@ ReprocessingServiceBound::ReprocessingServiceBound(EVEServiceManager& mgr, Repro
     m_stationRef = sItemFactory.GetStationRef(stationID);
     if (m_stationRef.get() != nullptr)
         m_stationRef->GetRefineData(m_stationCorpID, m_staEfficiency, m_tax);
+}
+
+bool ReprocessingServiceBound::ExecutePlayerBotReprocess(Client& client,
+                                                           const std::vector<uint32>& itemIDs)
+{
+    if (itemIDs.empty() || m_stationRef.get() == nullptr ||
+        client.GetLocationID() != m_stationRef->GetID())
+        return false;
+
+    PyList* items = new PyList(itemIDs.size());
+    for (size_t index = 0; index < itemIDs.size(); ++index)
+        items->items[index] = new PyInt(itemIDs[index]);
+    PyList* skipChecks = new PyList(0);
+    PyInt* fromLocation = new PyInt(m_stationRef->GetID());
+    PyInt* ownerID = new PyInt(client.GetCharacterID());
+    PyInt* flag = new PyInt(flagHangar);
+    PyBool* unknown = new PyBool(false);
+    PyDict* namedArgs = new PyDict();
+    PyCallArgs call(&client, new PyTuple(0), namedArgs);
+    PySafeDecRef(namedArgs);
+
+    PyResult result = Reprocess(call, items, fromLocation, ownerID, flag,
+                                unknown, skipChecks);
+    PySafeDecRef(items);
+    PySafeDecRef(skipChecks);
+    PySafeDecRef(fromLocation);
+    PySafeDecRef(ownerID);
+    PySafeDecRef(flag);
+    PySafeDecRef(unknown);
+    return true;
 }
 
 PyResult ReprocessingServiceBound::GetOptionsForItemTypes(PyCallArgs &call, PyDict* typeIDs) {

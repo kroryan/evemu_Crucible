@@ -404,9 +404,14 @@ PyResult LSCService::SendMessage(PyCallArgs& call, PyRep* channelInfo, PyWString
         return PyStatic.NewNone();
     }
 
-    if (!message.empty() && message.at(0) == '.') {
+    if (!message.empty() && (message.at(0) == '.' || message.at(0) == '/')) {
         _log(LSC__INFO, "SlashService->SlashCmd() called via LSC Service");
-        m_slash->SlashCommand(call.client, message);
+        PyResult slashResult = m_slash->SlashCommand(call.client, message);
+        if (slashResult.ssResult != nullptr && slashResult.ssResult->IsString()) {
+            const std::string reply = slashResult.ssResult->AsString()->content();
+            if (!reply.empty())
+                call.client->SendInfoModalMsg(reply.c_str());
+        }
         itr->second->SendMessage(call.client, message.c_str(), true);
     } else {
         itr->second->SendMessage(call.client, message.c_str());

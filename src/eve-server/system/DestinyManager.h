@@ -157,6 +157,10 @@ public:
     bool IsFollowing()                                  { return (m_ballMode == Destiny::Ball::Mode::FOLLOW); }
     //bool IsJumping()                                  { return (m_ballMode == Destiny::Ball::Mode::STOP); }
     bool IsWarping()                                    { return (m_warpState ? true : false); }
+    // IsWarping() becomes true only after alignment has completed and the
+    // WarpState exists. Autopilots that poll once per tick must also treat the
+    // WARP ball mode as in-progress or they will restart the align command.
+    bool IsWarpingOrAligning() const                    { return m_warpState != nullptr || m_ballMode == Destiny::Ball::Mode::WARP; }
     bool IsCloaked()                                    { return m_cloaked; }
     bool IsTurning()                                    { return m_turning; }
     bool IsTractored()                                  { return m_tractored; }

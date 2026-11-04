@@ -245,7 +245,6 @@ PyRep* PIDataMgr::GetProgramResultInfo(Colony* pColony, uint32 pinID, uint16 typ
     13:17:37 [PlanetResDump]       [ 1]       Long: 1251639296
     13:17:37 [PlanetResDump]       [ 2]    Integer: 33
     */
-    PySafeDecRef(heads);
     return res;
 }
 

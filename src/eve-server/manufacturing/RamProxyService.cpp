@@ -43,6 +43,10 @@
 #include "station/StationDataMgr.h"
 #include "system/CalendarDB.h"
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
 RamProxyService::RamProxyService() :
     Service("ramProxy")
 {
@@ -57,6 +61,27 @@ RamProxyService::RamProxyService() :
     this->Add("CompleteJob", &RamProxyService::CompleteJob);
     this->Add("GetRelevantCharSkills", &RamProxyService::GetRelevantCharSkills);
     this->Add("UpdateAssemblyLineConfigurations", &RamProxyService::UpdateAssemblyLineConfigurations);
+}
+
+PyResult RamProxyService::ExecutePlayerBotInstallJob(Client& client, const Call_InstallJob& args,
+                                                      bool quoteOnly, double authorizedCost)
+{
+    PyDict* namedArgs = new PyDict();
+    namedArgs->SetItemString("quoteOnly", new PyInt(quoteOnly ? 1 : 0));
+    const double boundedCost = std::max(0.0, std::min<double>(authorizedCost,
+        static_cast<double>(std::numeric_limits<int32>::max())));
+    namedArgs->SetItemString("authorizedCost", new PyInt(static_cast<int32>(std::ceil(boundedCost))));
+    PyCallArgs call(&client, args.Encode(), namedArgs);
+    PySafeDecRef(namedArgs);
+    return InstallJob(call, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+}
+
+PyResult RamProxyService::ExecutePlayerBotCompleteJob(Client& client, const Call_CompleteJob& args)
+{
+    PyDict* namedArgs = new PyDict();
+    PyCallArgs call(&client, args.Encode(), namedArgs);
+    PySafeDecRef(namedArgs);
+    return CompleteJob(call, nullptr, nullptr, nullptr);
 }
 
 /*
@@ -253,7 +278,7 @@ PyResult RamProxyService::InstallJob(PyCallArgs &call, PyRep* locationData, PyRe
         bomLocPath.flagID       = bomPath.pathFlagID;
     } else {
         // get path data for player
-        if (!bomLocPath.Decode(args.bpLocPath->GetItem(0))) {
+        if (args.bomLocPath->size() == 0 || !bomLocPath.Decode(args.bomLocPath->GetItem(0))) {
             _log(SERVICE__ERROR, "Failed to decode BOM path.");
             return nullptr;
         }
@@ -378,26 +403,29 @@ PyResult RamProxyService::InstallJob(PyCallArgs &call, PyRep* locationData, PyRe
     std::vector<InventoryItemRef> items;
     sRamMthd.GetBOMItems( bomLocPath, items );
 
-    std::vector<EvERam::RequiredItem>::iterator itemItr = reqItems.begin();
-    for (; itemItr != reqItems.end(); ++itemItr) {
-        if (itemItr->isSkill)
-            continue;       // not interested
-
-        // calculate needed quantity
-        uint32 qtyNeeded = (uint32)round(((itemItr->quantity * rsp.materialMultiplier) + (itemItr->quantity * rsp.charMaterialMultiplier - itemItr->quantity)) * args.runs);
-
-        // consume required materials
-        std::vector<InventoryItemRef>::iterator refItr = items.begin();
-        for (; refItr != items.end(); ++refItr)
-            if ((*refItr)->typeID() == itemItr->typeID) {
-                if (qtyNeeded >= (*refItr)->quantity()) {
-                    qtyNeeded -= (*refItr)->quantity();
-                    (*refItr)->Delete();
-                } else {
-                    (*refItr)->AlterQuantity(-qtyNeeded, true);
-                    break;  // we are done, stop searching
-                }
-            }
+    std::map<uint16, uint64_t> requiredMaterials;
+    for (const auto& requirement : reqItems) {
+        if (requirement.isSkill)
+            continue;
+        const uint32 quantity = static_cast<uint32>(round(
+            requirement.quantity * rsp.materialMultiplier +
+            (requirement.quantity * rsp.charMaterialMultiplier - requirement.quantity))) * args.runs;
+        requiredMaterials[requirement.typeID] += quantity;
+    }
+    for (const InventoryItemRef& item : items) {
+        if (item.get() == nullptr || item->ownerID() != bomLocPath.ownerID ||
+            (item->ownerID() != call.client->GetCharacterID() &&
+             item->ownerID() != call.client->GetCorporationID()))
+            continue;
+        auto required = requiredMaterials.find(item->typeID());
+        if (required == requiredMaterials.end() || required->second == 0)
+            continue;
+        const uint32 quantity = static_cast<uint32>(std::min<uint64_t>(required->second, item->quantity()));
+        required->second -= quantity;
+        if (quantity == item->quantity())
+            item->Delete();
+        else
+            item->AlterQuantity(-static_cast<int32>(quantity), true);
     }
 
     // update runs and do other shit where applicable

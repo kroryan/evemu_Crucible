@@ -276,10 +276,12 @@ void ServiceDB::ProcessRealChange(const char * key, double oldValue, double newV
     val->items[1] = new PyFloat(newValue);
     notif->SetItemString(key, val);
 
-    int* nullInt(nullptr);
     std::string qValue(key);
     qValue += " = ";
-    qValue += fcvt(newValue, 2, nullInt, nullInt);
+    // fcvt requires non-null decimal-point and sign output pointers, and its
+    // result does not contain a decimal point.  Using it here both crashed and
+    // could turn a fractional tax rate into the wrong SQL value.
+    qValue += std::to_string(newValue);
     dbQ.push_back(qValue);
 }
 

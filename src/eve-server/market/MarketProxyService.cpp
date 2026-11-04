@@ -79,6 +79,8 @@ bool MarketProxyService::PlaceBotLimitOrder(Client& client, uint32 stationID, ui
         quantity == 0 || price <= 0.0 || duration == 0 ||
         (bid && itemID != 0) || (!bid && itemID == 0))
         return false;
+    if (!bid && client.GetSystemID() == 30000142)
+        return false; // PlayerBots buy in Jita; their sell orders belong elsewhere.
 
     const double notional = price * quantity;
     const double requiredBalance = notional * (bid ? 1.10 : 0.05);
@@ -116,6 +118,21 @@ bool MarketProxyService::PlaceBotLimitOrder(Client& client, uint32 stationID, ui
                          &useCorpArg, std::nullopt);
 
     return MarketDB::FindOwnerOrder(client.GetCharacterID(), stationID, typeID, bid) != 0;
+}
+
+bool MarketProxyService::CancelBotSellOrder(Client& client, uint32 orderID)
+{
+    Market::OrderInfo order;
+    if (!MarketDB::GetOrderInfo(orderID, order) || order.ownerID != client.GetCharacterID() ||
+        order.isBuy || order.isCorp)
+        return false;
+    PyDict* named = new PyDict();
+    PyCallArgs call(&client, new PyTuple(0), named);
+    PyDecRef(named);
+    PyInt orderArg(orderID);
+    PyInt regionArg(order.regionID);
+    CancelCharOrder(call, &orderArg, &regionArg);
+    return !MarketDB::GetOrderInfo(orderID, order);
 }
 
 PyResult MarketProxyService::GetMarketGroups(PyCallArgs &call) {
@@ -516,7 +533,8 @@ PyResult MarketProxyService::PlaceCharOrder(PyCallArgs &call, PyInt* stationID, 
             for (int i = 0; i < 1000; i++) {
                 _log(MARKET__DUMP, "Mkt::PlaceCharOrder(): finding buy order: %i, %i, %i, %.2f", typeID->value(), stationID->value(), quantity->value(), price->value());
 
-                orderID = MarketDB::FindBuyOrder(typeID->value(), stationID->value(), quantity->value(), price->value());
+                orderID = MarketDB::FindBuyOrder(typeID->value(), stationID->value(), quantity->value(),
+                                                 price->value(), call.client->GetCharacterID());
 
                 if (!orderID) {
                     continue;
@@ -716,7 +734,7 @@ PyResult MarketProxyService::ModifyCharOrder(PyCallArgs &call, PyInt* orderID, P
         return nullptr;
     }
 
-    sMktMgr.InvalidateOrdersCache(call.client->GetRegionID(), oInfo.typeID);
+    sMktMgr.InvalidateOrdersCache(oInfo.regionID, oInfo.typeID);
     sMktMgr.SendOnOwnOrderChanged(call.client, orderID->value(), Market::Action::Modify, oInfo.isCorp);
 
     return nullptr;
@@ -749,8 +767,11 @@ PyResult MarketProxyService::CancelCharOrder(PyCallArgs &call, PyInt* orderID, P
     } else {
         ItemData idata(oInfo.typeID, ownerStation, locTemp, flagHangar, oInfo.quantity);
         InventoryItemRef iRef = sItemFactory.SpawnItem(idata);
-        if (iRef.get() != nullptr)
-            iRef->Donate(call.client->GetCharacterID(), oInfo.stationID, flagHangar, true);
+        if (iRef.get() == nullptr) {
+            _log(MARKET__ERROR, "CancelCharOrder - Failed to restore inventory for order #%i.", orderID->value());
+            return nullptr;
+        }
+        iRef->Donate(call.client->GetCharacterID(), oInfo.stationID, flagHangar, true);
     }
 
     PyRep* order(MarketDB::GetOrderRow(orderID->value()));
@@ -759,7 +780,7 @@ PyResult MarketProxyService::CancelCharOrder(PyCallArgs &call, PyInt* orderID, P
         return nullptr;
     }
 
-    sMktMgr.InvalidateOrdersCache(call.client->GetRegionID(), oInfo.typeID);
+    sMktMgr.InvalidateOrdersCache(oInfo.regionID, oInfo.typeID);
     sMktMgr.SendOnOwnOrderChanged(call.client, orderID->value(), Market::Action::Expiry, oInfo.isCorp, order);
 
     return nullptr;

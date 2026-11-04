@@ -58,7 +58,9 @@ PyResult IndexManager::GetDevelopmentIndicesForSystem(PyCallArgs& call, PyInt* s
 
     SovereigntyData sovData = svDataMgr.GetSovereigntyData(solarSystemID->value());
     PyPackedRow *row1 = new PyPackedRow(header);
+    PyIncRef(header);
     PyPackedRow *row2 = new PyPackedRow(header);
+    PyIncRef(header);
     PyPackedRow *row3 = new PyPackedRow(header);
     
     // Strategic

@@ -72,10 +72,13 @@ BoundDispatcher* PlanetMgrService::BindObject(Client *client, PyRep* bindParamet
     }
 
     uint32 planetID = bindParameters->AsInt()->value();
-    auto it = this->m_instances.find (planetID);
+    const std::pair<uint32, uint32> key(planetID, client->GetCharacterID());
+    auto it = this->m_instances.find(key);
 
-    if (it != this->m_instances.end ())
+    if (it != this->m_instances.end ()) {
+        it->second->RebindClient(client);
         return it->second;
+    }
 
     StaticData sData = StaticData();
     sDataMgr.GetStaticInfo(planetID, sData);
@@ -85,20 +88,20 @@ BoundDispatcher* PlanetMgrService::BindObject(Client *client, PyRep* bindParamet
         return nullptr;
     }
     SystemEntity* pSE = pSysMgr->GetSE(sData.itemID);
-    if (!pSE->IsPlanetSE()) {
+    if (pSE == nullptr || !pSE->IsPlanetSE()) {
         _log(SERVICE__ERROR, "%s Service: itemID is not planetID or planet not found", GetName().c_str());
         return nullptr;
     }
 
     PlanetMgrBound* bound = new PlanetMgrBound(this->GetServiceManager (), *this, client, pSE->GetPlanetSE());
 
-    this->m_instances.insert_or_assign (planetID, bound);
+    this->m_instances.insert_or_assign(key, bound);
 
     return bound;
 }
 
 void PlanetMgrService::BoundReleased (PlanetMgrBound* bound) {
-    auto it = this->m_instances.find (bound->GetPlanetID());
+    auto it = this->m_instances.find(std::make_pair(bound->GetPlanetID(), bound->GetCharacterID()));
 
     if (it == this->m_instances.end ())
         return;
@@ -131,7 +134,7 @@ PyResult PlanetMgrService::DeleteLaunch(PyCallArgs& call, PyInt* launchID) {
 
 PlanetMgrBound::PlanetMgrBound (EVEServiceManager& mgr, PlanetMgrService& parent, Client* client, PlanetSE* planet) :
     EVEBoundObject(mgr, parent),
-    m_planet(planet)
+    m_planet(planet), m_characterID(client->GetCharacterID())
 {
     m_colony = planet->GetColony(client);
 
@@ -157,6 +160,18 @@ PlanetMgrBound::PlanetMgrBound (EVEServiceManager& mgr, PlanetMgrService& parent
     this->Add("GMGetLocalDistributionReport", &PlanetMgrBound::GMGetLocalDistributionReport);
     this->Add("GMGetSynchedServerState", &PlanetMgrBound::GMGetSynchedServerState);
     this->Add("GMRunDepletionSim", &PlanetMgrBound::GMRunDepletionSim);
+}
+
+PlanetMgrBound::~PlanetMgrBound()
+{
+    delete m_planetMgr;
+}
+
+void PlanetMgrBound::RebindClient(Client* client)
+{
+    m_colony->SetClient(client);
+    delete m_planetMgr;
+    m_planetMgr = new PlanetMgr(client, m_planet, m_colony);
 }
 
 PyResult PlanetMgrBound::GetPlanetResourceInfo(PyCallArgs &call) {
@@ -226,6 +241,14 @@ PyResult PlanetMgrBound::GetProgramResultInfo(PyCallArgs &call, PyInt* ecuID, Py
     _log(PLANET__DEBUG, "PlanetMgrBound::Handle_GetProgramResultInfo() size=%lli", call.tuple->size());
     call.Dump(PLANET__DUMP);
      */
+    if (!m_colony->HasExtractor(ecuID->value()) || !std::isfinite(headRadius->value()) ||
+        headRadius->value() < 0.01 || headRadius->value() > 0.05)
+        return nullptr;
+    std::vector<uint16> resources;
+    sPlanetDataMgr.GetPlanetData(m_planet->GetTypeID(), resources);
+    if (typeID->value() < 1 || typeID->value() > UINT16_MAX ||
+        std::find(resources.begin(), resources.end(), typeID->value()) == resources.end())
+        return nullptr;
     return sPIDataMgr.GetProgramResultInfo(m_colony, ecuID->value(), typeID->value(), heads, headRadius->value());
 }
 

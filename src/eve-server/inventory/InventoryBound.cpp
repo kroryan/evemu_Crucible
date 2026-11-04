@@ -777,14 +777,8 @@ PyResult InventoryBound::List(PyCallArgs &call, std::optional <PyInt*> listFlag)
     // known to godma the call returns None, None.stacksize raises AttributeError that is
     // silently swallowed, and no Add() RPC is ever sent.
     //
-    // For station hangars:  send one OnGodmaPrimeItem(shipID, faked_row) per item.
-    //   OnGodmaPrimeItem IS dispatched via ScatterEvent; itemsByLocationID[shipID] already
-    //   exists (ship IB::List fires at login).  ProcessGodmaPrimeLocation sent as a free
-    //   charid notification is silently dropped by the client (no "On" prefix â†’ not a
-    //   ScatterEvent handler) so we cannot use it here.
-    //
-    // For non-station inventory:  use ProcessGodmaPrimeLocation as normal (it IS processed
-    //   when sent as a bound-object response, and the client calls it during Prime()).
+    // Ordinary inventory items must not be sent as charge sublocations via
+    // OnGodmaPrimeItem. Station hangars are primed by GetAllInfo at login.
     if (call.client != nullptr) {
         std::vector<InventoryItemRef> invItems;
         if (flag == flagNone) {
@@ -796,46 +790,7 @@ PyResult InventoryBound::List(PyCallArgs &call, std::optional <PyInt*> listFlag)
         _log(INV__MESSAGE, "IB::List() godma prime: %zu raw items found for locationID=%u ownerFilter=%u flag=%s isStation=%d", \
             invItems.size(), m_itemID, m_ownerID, sDataMgr.GetFlagName(flag), (int)isStationHangar);
 
-        if (isStationHangar && !invItems.empty()) {
-            // For station hangars we send one OnGodmaPrimeItem(shipID, faked_row) per item.
-            // OnGodmaPrimeItem IS dispatched via ScatterEvent (has the "On" prefix), unlike
-            // ProcessGodmaPrimeLocation which is only called during server-initiated Prime() and
-            // is silently ignored when sent as a free charid notification.
-            // itemsByLocationID[shipID] is always present (ship IB::List fires at login), so
-            // the has_key(shipID) check in the client's OnGodmaPrimeItem handler always passes.
-            // We fake locationID=shipID and flagID=flagCargoHold so UpdateItem's IsStation()/
-            // flag-allowlist checks accept the item and insert it into godma invitems.
-            uint32 shipID = call.client->GetShipID();
-            if (shipID != 0) {
-                for (auto& iRef : invItems) {
-                    if (iRef.get() == nullptr)
-                        continue;
-                    if (m_ownerID != 0 && iRef->ownerID() != m_ownerID) {
-                        _log(INV__MESSAGE, "IB::List() godma prime: skipping item %u owner=%u (filter=%u)", \
-                            iRef->itemID(), iRef->ownerID(), m_ownerID);
-                        continue;
-                    }
-                    Rsp_CommonGetInfo_Entry entry;
-                    if (!iRef->Populate(entry))
-                        continue;
-                    if (entry.attributes.find(AttrQuantity) == entry.attributes.end())
-                        entry.attributes[AttrQuantity] = new PyInt(iRef->quantity());
-                    if (entry.invItem != nullptr && !entry.invItem->IsNone()) {
-                        PyPackedRow* invRow = (PyPackedRow*)entry.invItem;
-                        invRow->SetField("locationID", new PyInt((int32)shipID));
-                        invRow->SetField("flagID", new PyInt(flagCargoHold));
-                    }
-                    _log(INV__MESSAGE, "IB::List() godma prime: sending OnGodmaPrimeItem for %s(%u) qty=%u (locationID faked to shipID=%u, flagID=flagCargoHold)", \
-                        iRef->name(), iRef->itemID(), iRef->quantity(), shipID);
-                    PyTuple* primePayload = new PyTuple(2);
-                    primePayload->SetItem(0, new PyInt(shipID));
-                    primePayload->SetItem(1, new PyObject("util.KeyVal", entry.Encode()));
-                    call.client->SendNotification("OnGodmaPrimeItem", "charid", &primePayload);
-                }
-            } else {
-                _log(INV__MESSAGE, "IB::List() godma prime: shipID=0, skipping station hangar prime for locationID=%u", m_itemID);
-            }
-        } else if (!isStationHangar && !invItems.empty()) {
+        if (!isStationHangar && !invItems.empty()) {
             // Non-station inventory: use ProcessGodmaPrimeLocation as normal.
             PyDict* locationData = new PyDict();
             for (auto& iRef : invItems) {
@@ -845,9 +800,7 @@ PyResult InventoryBound::List(PyCallArgs &call, std::optional <PyInt*> listFlag)
                     continue;
                 Rsp_CommonGetInfo_Entry entry;
                 if (!iRef->Populate(entry))
-                               _log(INV__MESSAGE, "IB::List() godma prime: locationData empty after owner filter â€” skipping ProcessGodmaPrimeLocation for locationID=%u", \
-                    m_itemID);
-     continue;
+                    continue;
                 if (entry.attributes.find(AttrQuantity) == entry.attributes.end())
                     entry.attributes[AttrQuantity] = new PyInt(iRef->quantity());
                 locationData->SetItem(new PyInt(iRef->itemID()), new PyObject("util.KeyVal", entry.Encode()));

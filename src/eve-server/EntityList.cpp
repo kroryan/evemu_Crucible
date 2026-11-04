@@ -159,10 +159,10 @@ void EntityList::AddPlayer(Client* pClient)
     if (pClient != nullptr)
         if (pClient->IsValidSession()) {
             m_players.emplace(pClient->GetCharacterID(), pClient);
+            for (auto& corporation : m_corpMembers)
+                corporation.second.erase(pClient);
             if (IsPlayerCorp(pClient->GetCorporationID())) {
-                corpRole role;
-                role.emplace(pClient, pClient->GetCorpRole());
-                m_corpMembers.emplace(pClient->GetCorporationID(), role);
+                m_corpMembers[pClient->GetCorporationID()][pClient] = pClient->GetCorpRole();
             }
         } else {
             m_players.emplace(pClient->GetCharID(), pClient);
@@ -173,6 +173,12 @@ void EntityList::AddPlayer(Client* pClient)
 
 void EntityList::RemovePlayer(Client* pClient)
 {
+    if (pClient == nullptr)
+        return;
+    // A character can change corporations while online. Remove every old
+    // membership before the Client is destroyed, not only its current corp.
+    for (auto& corporation : m_corpMembers)
+        corporation.second.erase(pClient);
     if (pClient != nullptr)
         if (pClient->IsValidSession()) {
             m_players.erase(pClient->GetCharacterID());
@@ -583,12 +589,14 @@ void EntityList::CorpNotify(uint32 corpID, uint8 bCastType, const char* notifyTy
         } break;
         case WalletChange: {
             while (itr != end) {
-                if ((itr->second & Corp::Role::Accountant) == Corp::Role::Accountant)
+                // Corporation roles may have changed since this client joined the list.
+                const int64 roles = itr->first->GetCorpRole();
+                if ((roles & Corp::Role::Director) || (roles & Corp::Role::Accountant))
                     cMap.emplace(itr->first->GetCharacterID(), itr->first);
-                if ((itr->second & Corp::Role::Auditor) == Corp::Role::Auditor)
+                if (roles & Corp::Role::Auditor)
                     cMap.emplace(itr->first->GetCharacterID(), itr->first);
                 // this may need to check if player has access to division changed - will require a LOT more code
-                if ((itr->second & Corp::Role::JuniorAccountant) == Corp::Role::JuniorAccountant)
+                if (roles & Corp::Role::JuniorAccountant)
                     cMap.emplace(itr->first->GetCharacterID(), itr->first);
                 ++itr;
             }

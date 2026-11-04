@@ -81,6 +81,11 @@ bool PlanetMgr::UpgradeCommandCenter(UUNCommand& nc) {
     int32 cost = 0;
     using namespace PI::Pin;
 
+    if (newLevel <= oldLevel || newLevel > Level5) {
+        m_client->SendErrorMsg("Invalid command center upgrade level.");
+        return true;
+    }
+
     while (oldLevel != newLevel) {
         //  calculate total upgrade cost in cases where upgrading multiple levels at once
         switch (oldLevel) {
@@ -120,10 +125,28 @@ bool PlanetMgr::CreatePin(UUNCommand& nc) {
     // the return here is used to break out of loop if needed.  return false = continue
     using namespace EVEDB::invGroups;
     uint32 typeID = PyRep::IntegerValueU32(nc.command_data->GetItem(1));
-    uint32 groupID = sItemFactory.GetType(typeID)->groupID();
+    const ItemType* pinType = sItemFactory.GetType(typeID);
+    if (pinType == nullptr)
+        return true;
+    uint32 groupID = pinType->groupID();
 
     switch (groupID) {
         case Command_Centers: {
+            UUNCCommandCenter uunccc;
+            if (!uunccc.Decode(nc.command_data)) {
+                _log(SERVICE__ERROR, "Failed to decode args for UUNCCommandCenter");
+                return true;
+            }
+            InventoryItemRef commandCenter = sItemFactory.GetItemRef(uunccc.pinID);
+            if (m_colony->HasColony() || !m_client->IsInSpace() ||
+                m_client->GetSystemID() != m_planet->SystemMgr()->GetID() ||
+                commandCenter.get() == nullptr || commandCenter->ownerID() != m_client->GetCharacterID() ||
+                commandCenter->typeID() != typeID || commandCenter->locationID() != m_client->GetShipID() ||
+                commandCenter->flag() != flagCargoHold || commandCenter->quantity() < 1 ||
+                commandCenter->isSingleton() || m_client->GetBalance() < 90000) {
+                m_client->SendErrorMsg("A command center owned by you must be in your ship's cargo in the planet's system.");
+                return true;
+            }
             //take the money, send wallet blink event record the transaction in their journal.
             std::string reason = "DESC:  Command Center construction on ";
             reason += m_planet->GetName();
@@ -142,13 +165,6 @@ bool PlanetMgr::CreatePin(UUNCommand& nc) {
                 Account::KeyType::Cash
             );
 
-            UUNCCommandCenter uunccc;
-            if (!uunccc.Decode(nc.command_data)) {
-                _log(SERVICE__ERROR, "Failed to decode args for UUNCCommandCenter");
-                nc.command_data->Dump(PLANET__WARNING, "      ");
-                m_client->SendErrorMsg("Internal Server Error.  Ref: ServerError 04508.");
-                return true;
-            }
             m_colony->CreateCommandPin(uunccc.pinID, uunccc.typeID, uunccc.latitude, uunccc.longitude);
             if (m_planet->GetCustomsOffice() == nullptr)
                 m_planet->CreateCustomsOffice();
@@ -221,6 +237,10 @@ bool PlanetMgr::CreatePin(UUNCommand& nc) {
     if (cost < 1) {
         // error here....
         m_client->SendErrorMsg("Internal Server Error.  Ref: ServerError 02001.");
+        return true;
+    }
+    if (!m_colony->HasColony() || m_client->GetBalance() < cost) {
+        m_client->SendErrorMsg("A command center and sufficient ISK are required to build this structure.");
         return true;
     }
 
@@ -314,7 +334,6 @@ void PlanetMgr::CreateRoute(UUNCommand& nc)
         return;
     }
 
-    PyIncRef(args.path);
     m_colony->CreateRoute(args.routeID, args.typeID, args.qty, args.path);
 }
 

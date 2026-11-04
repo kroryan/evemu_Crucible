@@ -1113,7 +1113,8 @@ PyPackedRow::PyPackedRow(DBRowDescriptor* header)
 PyPackedRow::PyPackedRow(const PyPackedRow& oth )
 : PyRep(PyRep::PyTypePackedRow), mHeader(oth.header()), mFields(oth.mFields)
 {
-    //sLog.Cyan("PyPackedRow()", "Copy C'tor.");
+    PyIncRef(mHeader);
+    PyIncRef(mFields);
 }
 
 PyPackedRow::~PyPackedRow()

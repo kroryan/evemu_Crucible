@@ -68,6 +68,19 @@ void MissionDB::CreateOfferID(MissionOffer& data)
 
 void MissionDB::LoadEncounterData(DBQueryResult& res)
 {
+    DBQueryResult table;
+    if (!sDatabase.RunQuery(table,
+        "SELECT 1 FROM information_schema.tables "
+        "WHERE table_schema = DATABASE() AND table_name = 'qstEncounter' LIMIT 1")) {
+        codelog(DATABASE__ERROR, "Could not check for optional qstEncounter data: %s", table.error.c_str());
+        return;
+    }
+    DBResultRow tableRow;
+    if (!table.GetRow(tableRow)) {
+        sLog.Warning("MissionDataMgr", "qstEncounter is not installed; combat encounter offers are unavailable.");
+        return;
+    }
+
     if (!sDatabase.RunQuery(res,
         "SELECT id, briefingID, name, level, typeID, important, storyline, rewardISK, rewardItemID,"
         " rewardItemQty, bonusISK, bonusTime, sysRange, raceID, npcCount, dungeonID, npcGroupID,"

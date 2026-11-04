@@ -97,6 +97,16 @@ void CorpRegistryService::BoundReleased (CorpRegistryBound* bound) {
     this->m_instances.erase (it);
 }
 
+bool CorpRegistryService::AcceptPlayerBotApplication(uint32 corpID, Client& founder,
+                                                     Client& applicant, const std::string& text)
+{
+    PyTuple* bind = new PyTuple(1);
+    bind->SetItem(0, new PyInt(corpID));
+    CorpRegistryBound* bound = static_cast<CorpRegistryBound*>(BindObject(&founder, bind));
+    PyDecRef(bind);
+    return bound != nullptr && bound->AcceptPlayerBotApplication(founder, applicant, text);
+}
+
 PyResult CorpRegistryService::GetCorporateContacts(PyCallArgs &call)
 {
     return m_db.GetContacts(call.client->GetCorporationID());

@@ -318,7 +318,7 @@ PyResult Command_commandlist(Client* pClient, CommandDB* db, EVEServiceManager& 
     // Group commands by required role
     std::map<int64_t, std::vector<std::pair<std::string, std::string>>> groupedCommands;
     for (const auto& [name, record] : commands) {
-        if (pClient->GetAccountRole() < record->required_role)
+        if ((pClient->GetAccountRole() & record->required_role) != record->required_role)
             continue;
 
         groupedCommands[record->required_role].emplace_back(name, record->description);

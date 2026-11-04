@@ -1454,8 +1454,8 @@ PyRep *CorporationDB::GetApplications(uint32 corpID) {
     DBQueryResult res;
     if (!sDatabase.RunQuery(res,
         " SELECT"
-        " applicationID, characterID, corporationID, applicationText, status,"
-        " applicationDateTime, lastCorpUpdaterID"
+        " applicationID, corporationID, characterID, applicationText, roles, grantableRoles,"
+        " status, applicationDateTime, deleted, lastCorpUpdaterID"
         " FROM crpApplications"
         " WHERE corporationID = %u AND deleted = 0",
         corpID))
@@ -1472,13 +1472,16 @@ PyRep *CorporationDB::GetApplications(uint32 corpID) {
 
 bool CorporationDB::GetCurrentApplicationInfo(Corp::ApplicationInfo& aInfo) {
     DBQueryResult res;
+    std::string escaped;
+    sDatabase.DoEscapeString(escaped, aInfo.appText);
     if (!sDatabase.RunQuery(res,
         " SELECT"
         " applicationID, applicationText, roles, grantableRoles, status,"
         " applicationDateTime, lastCorpUpdaterID, deleted"
         " FROM crpApplications"
-        " WHERE characterID = %u AND corporationID = %u AND applicationText = '%s'",
-        aInfo.charID, aInfo.corpID, aInfo.appText.c_str()))
+        " WHERE characterID = %u AND corporationID = %u AND applicationText = '%s' AND deleted = 0"
+        " ORDER BY applicationID DESC LIMIT 1",
+        aInfo.charID, aInfo.corpID, escaped.c_str()))
     {
         codelog(CORP__DB_ERROR, "Error in query: %s", res.error.c_str());
         aInfo.valid = false;

@@ -409,6 +409,11 @@ void MissionDataMgr::AddMissionOffer(uint32 charID, MissionOffer& data)
 
 void MissionDataMgr::RemoveMissionOffer(uint32 charID, MissionOffer& data)
 {
+    // Keep completed missions in the journal cache when they leave the active
+    // offer maps. Otherwise a successful turn-in vanishes until the next login.
+    if (data.stateID == Mission::State::Completed)
+        m_xoffers.emplace(charID, data);
+
     auto itr = m_offers.equal_range(charID);
     for (auto it = itr.first; it != itr.second; ++it)
         if (it->second.agentID == data.agentID) {
