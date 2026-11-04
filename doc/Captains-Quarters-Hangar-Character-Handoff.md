@@ -1,10 +1,10 @@
 # Captain's Quarters, hangar and character handoff
 
-Status: investigation in progress. The client remains usable in the station,
-but entering Captain's Quarters leaves a `LOADING` overlay; the player can
-leave that view. Walking in stations is **not verified as working**. Do not
-advertise it as implemented or treat a successful character creation screen as
-a successful station-interior test.
+Status: investigation in progress. The reported client remains usable in the
+station, but entering Captain's Quarters leaves a `LOADING` display and the
+player can leave that view. Walking in stations is **not verified as working**.
+Do not advertise it as implemented or treat a successful character-creation
+screen as a successful station-interior test.
 
 ## Environment and symptoms
 
@@ -12,6 +12,23 @@ a successful station-interior test.
   station and leave Captain's Quarters. Entering Captain's Quarters leaves a
   `LOADING` overlay while the client process remains alive. Verify the ship
   hangar and quarters transitions independently.
+- The installed client's `start.ini` points at `192.168.1.158:26000` with
+  premium edition. A disposable Proton prefix reached the EULA screen before
+  login; no agreement was accepted. A later launch accidentally selected
+  Proton 7 for the installed prefix, so it was immediately migrated back with
+  Proton Experimental 11's `wineboot -u`; its compatibility version now reads
+  `11.0-100`, the server target remains correct, and no game process is running.
+  Do not accept the EULA on the user's behalf.
+- The remote `evemu-server` container is running and `evemu-db` is healthy.
+  The server restarted once at 10:12 UTC on 2026-11-04. Its logs since that
+  restart contain bot activity but no character-creation, paper-doll, or
+  world-space calls from the client.
+- The customization spinner occurs before `CreateCharacterWithDoll` is sent.
+  Existing server traces show the two character-creation data requests
+  succeeding without cache-query errors, followed by no request while the
+  preview remains loading. A separate trial rendered the avatar under
+  `PROTON_USE_WINED3D=1`, which makes a client renderer issue a strong lead;
+  the server has not yet been cleared by a completed client-driven creation.
 - A Windows minidump from a failed attempt reports an access violation while
   executing `_trinity_deploy.dll`, at module offset `0x512214`. The module
   list contains Wine components. This is evidence of where the client crashed,
@@ -22,9 +39,12 @@ a successful station-interior test.
   `UpdateCQMainScreen`; its news ticker then raised an SSL handshake error
   after a redirect to `www.eveonline.com`. The client continued running, so
   this is an observed error, not yet a proven cause of the stuck overlay.
-- The same session had `shipid` set while docked and `worldspaceid` equal to
-  the station ID. No `worldSpaceServer` request was observed in the captured
-  service-call logs. This does not prove that no later movement call is needed.
+- `Client::InitSession` and `Client::UpdateSession` both clear `shipid` while
+  docked and set `worldspaceid` to the station ID. The current source matches
+  the expected station session and should not be reverted without a new
+  reproduction. The startup `GetCharSelectInfo` query returns `0` for
+  `worldSpaceID` so the selection screen does not claim the character is
+  already walking in a station.
 - A separate launch with Proton Experimental 11 ended in an access violation
   in `PhysXCore.dll`; Proton 7 reached the station UI. Do not conflate that
   renderer crash with the reproducible quarters-loading issue.
@@ -43,18 +63,41 @@ a successful station-interior test.
   transitions, and that *Load Station Environments* controls availability.
   Original game support does not establish emulator support.
 
-## Current server implementation
+## Client and server boundary established from client scripts
 
-- `src/eve-server/system/WorldSpaceServer.cpp` contains two placeholder
-  methods returning `None`; the service is not registered in the main service
-  startup. The [upstream Crucible implementation](https://github.com/EvEmu-Project/evemu_Crucible/blob/f55b488a006e3090470d3b481aee47a1d7a0dade/src/eve-server/system/WorldSpaceServer.cpp)
-  is also a placeholder. Do not assume these methods are required for every
-  local Captain's Quarters operation until the client trace shows it.
-- Commit `8c8fe833` changed `Client::InitSession` and `Client::UpdateSession`
-  to retain the active `shipid` while docked. The current investigation is
-  testing a revert of those two assignments because the quarters issue
-  reproduces with this session state. This remains a hypothesis until the
-  client transition is rechecked; do not reintroduce PR #323 wholesale.
+- In `eveWorldSpaceClient.GetWorldSpaceTypeIDFromWorldSpaceID`, station IDs
+  take a local branch: station type and race select one of the four built-in
+  Captain's Quarters type IDs. `worldSpaceServer` is only called for a
+  non-station world-space ID. The C++ placeholder's two `None` responses
+  therefore do not explain a normal station CQ load by themselves.
+- The client world-space service constructs a scene from its local
+  `cfg.worldspaces` data, loads local path data, then uses a station spawn
+  locator (bedroom, balcony, or new-character spawn). The station movement
+  component disables movement broadcasts for client-side-only station scenes.
+- `EveEntitySpawnClient` uses the client-only player spawner for these scenes.
+  That spawner requests `paperdoll.GetMyPaperDollData(charID)` and
+  `charMgr.GetPublicInfo(charID)` in parallel to build the avatar locally.
+  Those are the server calls to trace once a character exists and the user can
+  enter quarters.
+- The Crucible client's `worldspaces` bulk cache (`2001700035`) contains four
+  Establishment types (`32574`–`32577`) and four Captain's Quarters types:
+  Amarr `32578`, Gallente `32579`, Minmatar `32580`, and Caldari `32581`.
+  Each CQ entry is marked interior and unique and has a local safe position.
+  Its `entitySpawns` cache (`2002200006`) contains 330–418 static records per
+  race (Amarr 382, Gallente 330, Minmatar 418, Caldari 338). This confirms the
+  client has the local scene data; those counts do not prove that runtime
+  spawn locators, collisions, or walking work.
+- `UpdateCQMainScreen` registers the holoscreen UI. Its RSS ticker fetches
+  `eveonline.com` externally. The observed TLS error can affect that ticker;
+  it is not evidence that the world-space scene failed. The same holoscreen
+  service displays `loadingScreen.png` when `cqScreensEnabled` is false, so
+  identify whether the reported `LOADING` is that screen or a full-screen
+  transition before changing server code.
+- `src/eve-server/system/WorldSpaceServer.cpp` still contains two placeholder
+  methods returning `None`, and the service is not registered at startup. The
+  [upstream Crucible implementation](https://github.com/EvEmu-Project/evemu_Crucible/blob/f55b488a006e3090470d3b481aee47a1d7a0dade/src/eve-server/system/WorldSpaceServer.cpp)
+  is also a placeholder. Implement and register it only after an actual
+  non-station world-space request and its type/address mapping are captured.
 - The active ship and station data were checked for the affected player at the
   time of investigation. That is a point-in-time observation, not a guarantee
   for other characters or subsequent sessions.
@@ -63,22 +106,33 @@ a successful station-interior test.
   JPEGs are not proof that their 3D avatars can load or animate in quarters.
   See `doc/PlayerBots.md` for the current provisioning approach and limits.
 
-## Next investigation
+## Action plan
 
-1. Recheck the quarters transition with docked `shipid` cleared, then verify
-   login, docking, undocking, ship switching and the ship hangar independently.
-2. Capture corresponding client and server timestamps for entering quarters,
-   walking, returning to the hangar and undocking. Record the first failing
-   action and complete error/stack.
-3. Determine whether the `GetNewsTickerData` TLS failure blocks only the
-   holoscreen or the quarters scene. Do not treat correlation as proof.
-4. Trace actual network calls, session keys, avatar data and client asset
-   requests. Implement only responses shown to be required by the target
-   client; derive packet shapes from the client and real captures. Do not
-   invent responses for the placeholder world-space service.
-5. Exercise race/station variants, ship and clothing changes, relogging,
-   multiple characters and PlayerBot appearance. Confirm no player data is
-   overwritten and normal login, hangar and space sessions remain intact.
+1. **Unblock a controlled client run.** Use a dedicated test account and a
+   disposable Proton prefix. The installed client already points at the SSH
+   server. Run customization once with `PROTON_USE_WINED3D=1`, finish creating
+   a test character, and record whether the preview spinner clears. Do not
+   alter existing accounts or reset the remote database.
+2. **Separate the two loading displays.** Capture the exact screen at quarters
+   entry and inspect `cqScreensEnabled`, the full-screen loading layer, and
+   client stack traces. Compare hangar-to-quarters, quarters-to-hangar, and
+   undock independently.
+3. **Trace avatar spawn.** Correlate client and server timestamps for
+   `GetMyPaperDollData`, `GetPublicInfo`, scene spawn, and avatar render. Fix
+   server responses only if the request or returned data is wrong; otherwise
+   keep the renderer workaround isolated to the client launch configuration.
+4. **Verify every station race.** Check Caldari, Minmatar, Amarr, and Gallente
+   station type selection, local world-space assets, spawn points, collision
+   floors, pathing, holoscreens, and exit transitions. Record the first action
+   and complete error stack for each failure.
+5. **Implement non-station world spaces separately.** Capture a real
+   `worldSpaceServer` request, determine how the server resolves its type ID
+   and Macho address, then implement those exact mappings and register the
+   service. Station CQ behavior must remain independent of this work.
+6. **Deploy by verified milestone.** Build, exercise login/dock/hangar/CQ/exit/
+   undock with the Crucible client, commit and push, then deploy to
+   `krory90@192.168.1.158`. Preserve the live database and recheck its service
+   health after deployment.
 
 ## Related stability and deployment notes
 
