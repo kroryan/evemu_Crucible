@@ -85,6 +85,13 @@ screen as a successful station-interior test.
   `cfg.worldspaces` data, loads local path data, then uses a station spawn
   locator (bedroom, balcony, or new-character spawn). The station movement
   component disables movement broadcasts for client-side-only station scenes.
+- `EveMovementClient` uses the client's `gameWorldClient` floor height and a
+  local `GameWorld.PathToMode` for double-click movement. Since CQ scenes are
+  client-side-only, their floors, pathing, collision, static props, and spawn
+  locators come from the Crucible client assets; the server does not simulate
+  the avatar's walking. The server supplies the station `worldspaceid` and
+  character/avatar RPC data. A server-side scene or movement implementation
+  would not repair a missing local navmesh or renderer issue.
 - `EveEntitySpawnClient` uses the client-only player spawner for these scenes.
   That spawner requests `paperdoll.GetMyPaperDollData(charID)` and
   `charMgr.GetPublicInfo(charID)` in parallel to build the avatar locally.
@@ -106,8 +113,10 @@ screen as a successful station-interior test.
 - `UpdateCQMainScreen` registers the holoscreen UI. Its RSS ticker fetches
   `eveonline.com` externally. The observed TLS error can affect that ticker;
   it is not evidence that the world-space scene failed. The same holoscreen
-  service displays `loadingScreen.png` when `cqScreensEnabled` is false, so
-  identify whether the reported `LOADING` is that screen or a full-screen
+  service displays `res:/UI/Texture/classes/CQLoadingScreen/loadingScreen.png`
+  when the local preference `cqScreensEnabled` is false. The server registers
+  `holoscreenMgr`; its empty news caches are handled by the client. Identify
+  whether the reported `LOADING` is this monitor fallback or a full-screen
   transition before changing server code.
 - `src/eve-server/system/WorldSpaceServer.cpp` still contains two placeholder
   methods returning `None`, and the service is not registered at startup. The
