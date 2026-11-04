@@ -1,3 +1,4 @@
+-- +migrate Up
 -- Preserve the currently stored values while preventing future FLOAT rounding loss.
 ALTER TABLE crpWalletDivisons
     MODIFY balance1 DOUBLE NOT NULL DEFAULT 0,
@@ -7,3 +8,6 @@ ALTER TABLE crpWalletDivisons
     MODIFY balance5 DOUBLE NOT NULL DEFAULT 0,
     MODIFY balance6 DOUBLE NOT NULL DEFAULT 0,
     MODIFY balance7 DOUBLE NOT NULL DEFAULT 0;
+
+-- +migrate Down
+-- Deliberately irreversible: converting DOUBLE back to FLOAT can lose precision.
