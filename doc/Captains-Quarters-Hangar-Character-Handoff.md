@@ -272,18 +272,21 @@ as working**.
   skips null or unaligned callback vtables in `PrepareAsync`. The process loaded
   that DLL but did not create a usable game window or reach the server, so the
   guard was rejected and removed from the installation. Do not package it.
-- **Baseline control, 2026-11-04:** the installed files were restored to
-  `blue.dll` SHA-256
+- **Baseline control, 2026-11-04:** the installation was restored to its
+  pre-experiment state: `blue.dll` SHA-256
   `3e1b60aa3056337b881971dff6d3e94237572db8f905f7b7022931557874b29c` and
-  original `script/compiled.code` SHA-256
+  `script/compiled.code` SHA-256
   `77390fd60faf2f75116dd0c9f51abaf292f66f2071718664ae2d97dc1bb6e286`.
+  Blue retains the pre-existing build-360229 CRC bypass, with its original
+  signing key and manifest verifier restored.
   On the local server, account 61 logged in as COlo Donier; the server handled
   character selection and `paperDollServer::GetMyPaperDollData()`, and the
   account remained online. The user confirmed reaching Quarters. There was no
   new crash dump. The EVE window was iconified in this desktop, so no screenshot
   proof was captured. This is one successful control run, not proof of
   repeatable stability or a complete fix; it shows this character's Quarters
-  path can work against the current local server with the original client files.
+  path can work against the current local server with the pre-experiment client
+  baseline.
 - The existing modified-client ZIP is only an old diagnostic candidate:
   `/tmp/EVE-Crucible-modified-client-7.31.360229.zip` (6,381,380,069 bytes;
   SHA-256
