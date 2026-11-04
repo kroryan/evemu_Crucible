@@ -16,8 +16,9 @@ screen as a successful station-interior test.
   premium edition. The extracted test client's `start.ini` had pointed at
   `127.0.0.1`; it now points at the SSH server and was restarted with
   `PROTON_USE_WINED3D=1`. Its login screen reports `192.168.1.158`, status
-  `OK`, and zero players. It is currently stopped at the EULA; no agreement
-  was accepted. Do not accept the EULA on the user's behalf.
+  `OK`, and zero players. The screen showed the EULA; the isolated test
+  process was stopped without accepting it. Do not accept the EULA on the
+  user's behalf.
 - A direct launch temporarily selected Proton 7 for the installed prefix. It
   was migrated back using Proton Experimental 11's `wineboot -u`; the prefix
   compatibility version reads `11.0-100`. No account was logged in through
