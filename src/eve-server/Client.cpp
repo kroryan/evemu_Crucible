@@ -1410,8 +1410,8 @@ void Client::SetShip(ShipItemRef shipRef) {
     m_char->SetActiveShip(m_shipId);
     if (sDataMgr.IsSolarSystem(m_locationID)) {
         m_char->Move(m_shipId, flagPilot, true);
+        pSession->SetInt("shipid", m_shipId); // update shipID in session while in space
     }
-    pSession->SetInt("shipid", m_shipId); // update shipID in session (always, docked or in-space)
 
     if (m_validSession or m_charCreation)
         m_ship->SetPlayer(this);
@@ -2126,9 +2126,7 @@ void Client::InitSession(int32 characterID)
     if (sDataMgr.IsStation(stationID)) {
         m_locationID = stationID;
         pSession->Clear("solarsystemid");    //must be 0 in station
-        // Crucible 7.31 needs the active ship in docked sessions to load the
-        // ship hangar and complete the character-selection view transition.
-        pSession->SetInt("shipid", m_shipId);
+        pSession->Clear("shipid");    //must be 0 in station
         pSession->SetInt("stationid", stationID);
         pSession->SetInt("stationid2", stationID);
         pSession->SetInt("locationid", stationID);
@@ -2160,7 +2158,7 @@ void Client::UpdateSession()
     uint32 solarsystemID = m_char->solarSystemID();
     if (sDataMgr.IsStation(stationID)) {
         pSession->Clear("solarsystemid");    //must be 0 in station
-        pSession->SetInt("shipid", m_shipId);
+        pSession->Clear("shipid");    //must be 0 in station
         //pSession->Clear("worldspaceid");    //not used here (yet)
 
         pSession->SetInt("stationid", stationID);
