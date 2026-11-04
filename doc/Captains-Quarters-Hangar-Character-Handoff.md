@@ -1,52 +1,62 @@
 # Captain's Quarters, hangar and character handoff
 
-Status: the Crucible character-selection regression has a fix deployed to
-`192.168.1.158`; post-fix in-game confirmation is pending because the isolated
-test prefix presents the EULA. Captain's Quarters can still remain on `LOADING`,
-and walking in stations is **not verified as working**.
+Status: compared with the official Crucible server, this fork had changed
+docked-session `shipid` handling. The original behavior is restored, built, and
+deployed to `192.168.1.158:26000`. The user's active client remains on the
+official comparison instance at `127.0.0.1:26002`; its next start is configured
+for the patched SSH server. Client confirmation on that patched server is still
+pending. Walking in stations is **not verified as working**.
 
 ## Environment and symptoms
 
-- The target client is Crucible 7.31.360229. The player can log in, use the
-  station and leave Captain's Quarters. Entering Captain's Quarters leaves a
-  `LOADING` overlay while the client process remains alive. Verify the ship
-  hangar and quarters transitions independently.
-- The installed client's `start.ini` points at `192.168.1.158:26000` with
-  premium edition. The extracted test client's `start.ini` had pointed at
-  `127.0.0.1`; it now points at the SSH server. The new
+- The target client is Crucible 7.31.360229. On the affected fork, the player
+  could log in, use the station and leave Captain's Quarters, but entering the
+  quarter stayed on `LOADING`. The same client has since loaded that quarter on
+  the official comparison server. This points to a server regression; hangar
+  and quarter transitions still need separate confirmation on the patched fork.
+- The installed client's `start.ini` now points at `192.168.1.158:26000` with
+  premium edition. The client process was left connected to the separate
+  official comparison instance at `127.0.0.1:26002`; changing `start.ini` does
+  not switch an already-running session. The new
   [Proton test launcher](../utils/dev/test_crucible_client.sh) checks the
   target and starts the installed `bin/ExeFile.exe` with Proton 7 + WineD3D in
   its own compatibility prefix. The installed binary reached the login screen,
   which reports `192.168.1.158`, status `OK`, and zero players. It showed the
   EULA; the test process exited without accepting it. Do not accept the EULA
   on the user's behalf.
-- On 2026-11-04, an authenticated Crucible run reached character creation and
-  called `CreateCharacterWithDoll`, then `SelectCharacterID`. The server
-  returned the new character, but the client raised
+- On 2026-11-04, an authenticated run against this fork reached character
+  creation and called `CreateCharacterWithDoll`, then `SelectCharacterID`. The
+  server returned the new character, but the client raised
   `ViewStateError: There is not a valid transition from charactercreation to
-  charactercreation` from `GameUI::GoCharacterCreation`; its process then
-  exited with a CCP minidump. This localizes the reproduced failure to the
-  character-selection/session handoff.
-- Commit `574b9e0f` cleared `shipid` in both `Client::InitSession` and
-  `Client::UpdateSession` for docked characters. The earlier server code set
-  the active ship in station sessions, which Crucible needs to load the ship
-  hangar and complete that view handoff. Commit `318e3496` restores
-  `SetInt("shipid", m_shipId)` in both paths. The change compiled locally and
-  in the remote Docker image, was pushed, and is deployed on the SSH server.
-- The remote `evemu-server` container was recreated with `--no-deps`; the
-  `evemu-db` container was not restarted and remains healthy. A post-deploy
-  client run reached the EULA in the isolated test prefix, which was left
-  unaccepted, so the corrected character-selection path still needs a game
-  session to verify it.
+  charactercreation` from `GameUI::GoCharacterCreation`. The corresponding log
+  contains `Session::LocationID == 0` before `SelectCharacterID`, localizing the
+  regression to the character-creation/session handoff.
+- The official Crucible source clears `shipid` in `InitSession` and
+  `UpdateSession` for docked characters, and `SetShip` updates session `shipid`
+  only in a solar system. This fork had diverged in both places: commit
+  `cdbb21b4` made `SetShip` update it unconditionally, and commit `318e3496`
+  added it to docked sessions. During character creation `m_locationID` is
+  still zero, so the unconditional update dirtied the session and made the
+  automatic RPC session notification emit the logged `LocationID == 0` change.
+  Commit `8d463e2e` restores the official behavior in all three paths.
+- The user verified that the official comparison instance enters the quarter.
+  The corrected fork was rebuilt from commit `8d463e2e` and is online at
+  `192.168.1.158:26000/26001`; the client has not yet logged into that patched
+  instance. The launcher now targets it on the next start.
+- Deployment initially exposed that the server's `.env` stores
+  `EVEMU_DB_PASSWORD` while Compose did not pass it to the startup migration
+  script. Commit `8c107170` passes that configured value to the server and to
+  future database initialization. The currently running DB authenticated with
+  that value and retains the existing `evemu_db` volume; no database data was
+  reset.
 - A direct launch temporarily selected Proton 7 for the installed prefix. It
   was migrated back using Proton Experimental 11's `wineboot -u`; the prefix
   compatibility version reads `11.0-100`. No account was logged in through
   that launch.
-- The remote `evemu-server` container is running and `evemu-db` is healthy.
-  The server restarted once at 10:12 UTC on 2026-11-04. Its logs since that
-  restart contain bot activity but no character-creation, paper-doll, or
-  world-space calls from the client. The current test cannot reach those
-  calls until the EULA is accepted.
+- The remote Compose project `evemu` is running its `server` and `db` services.
+  The new server reports `EVEmu Server is Online`, uses the existing
+  `evemu_db` volume, and listens on host ports `26000` and `26001`. No client
+  calls to the patched server have been recorded since its deployment.
 - The customization spinner occurs before `CreateCharacterWithDoll` is sent.
   On the local test server, four runs received only
   `GetCharCreationInfo` and `GetCharNewExtraCreationInfo`; no later character
@@ -60,11 +70,11 @@ and walking in stations is **not verified as working**.
   list contains Wine components. This is evidence of where the client crashed,
   not proof that Wine, a graphic asset, a character model, or a server response
   caused it. The minidump alone does not contain a useful symbolized stack.
-- The SSH checkout is now at `318e3496`; the server container is running with
-  the healthy database. During an earlier quarters entry, the client reached
-  `UpdateCQMainScreen`; its news ticker then raised an SSL handshake error
-  after a redirect to `www.eveonline.com`. The client continued running, so
-  this is an observed error, not a proven cause of a stuck scene.
+- The SSH checkout is now at `8c107170`. During an earlier quarters entry,
+  the client reached `UpdateCQMainScreen`; its news ticker then raised an SSL
+  handshake error after a redirect to `www.eveonline.com`. The client
+  continued running, so this is an observed error, not a proven cause of a
+  stuck scene.
 - The startup `GetCharSelectInfo` query returns `0` for
   `worldSpaceID` so the selection screen does not claim the character is
   already walking in a station.
@@ -145,13 +155,12 @@ and walking in stations is **not verified as working**.
 
 ## Action plan
 
-1. **Make the renderer run reproducible.** Keep the installed client pointed
-   at `192.168.1.158:26000`; test the renderer workaround in an isolated Proton
-   prefix. The screenshot comparison supports Proton 7 + WineD3D for character
-   customization. Do not accept the EULA for the user or modify account data.
-2. **Close character creation on the remote server.** After the EULA is
-   accepted by its user, create one dedicated test character and correlate
-   `GetCharCreationInfo`, `GetCharNewExtraCreationInfo`,
+1. **Verify the patched server with the client.** On the next connection, use
+   `192.168.1.158:26000` and check character creation, selection, and the
+   quarter transition. The current open client is still connected to the
+   upstream comparison server and was left untouched.
+2. **Verify character creation on the remote server.** Use a dedicated test
+   account and correlate `GetCharCreationInfo`, `GetCharNewExtraCreationInfo`,
    `CreateCharacterWithDoll`, and the avatar tables. Verify appearance, sculpt,
    modifier, color, and portrait rows before entering a station.
 3. **Prove the four active CQ paths.** For Amarr, Caldari, Gallente, and
@@ -167,10 +176,10 @@ and walking in stations is **not verified as working**.
    current station path resolves locally. If a non-station ID reaches
    `worldSpaceServer`, capture the ID and expected type/address response, add
    the mapping and register the service, then test both entry and exit.
-6. **Deploy verified code.** Build, exercise all reachable interiors plus
-   hangar and space transitions, commit and push, then deploy to
-   `krory90@192.168.1.158`. Preserve MariaDB and `data/market-backups/`; verify
-   container health and the deployed source revision afterward.
+6. **Continue deployment verification.** The session fix is committed, pushed,
+   and deployed to `krory90@192.168.1.158`; the DB volume and
+   `data/market-backups/` are preserved. Confirm the client path first, then
+   exercise all reachable interiors plus hangar and space transitions.
 
 ## Related stability and deployment notes
 
