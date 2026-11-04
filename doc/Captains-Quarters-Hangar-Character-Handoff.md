@@ -225,9 +225,14 @@ as working**.
 ## 2026-11-04 client binary investigation
 
 - The Crucible `script/compiled.code` index has 1,082 Python 2.7 EVE modules;
-  1,081 decompiled successfully. One unrelated Carbon `htmlwriter` module
-  defeats the decompiler parser. The three `lib/*.ccp` archives separately
-  yielded 706 modules. Native `blue.dll` source and its matching PDB are not
+  the three `lib/*.ccp` archives yielded another 706. Decompiled source and the
+  corresponding extracted bytecode are in `~/evedecomp`. `htmlwriter`'s
+  `GetDashboard` lambda was reconstructed from its Python 2.7 bytecode after
+  both decompilers failed on that expression. An alternate decompiler repaired
+  67 more source files. A Python 2 grammar pass accepts 1,775 of the 1,788
+  modules; 13 remain flagged with their original bytecode and partial source
+  preserved under `~/evedecomp/recovery-notes`. This is the Python layer, not
+  native engine source. Native `blue.dll` source and its matching PDB are not
   available, so the native engine cannot be rebuilt from source here.
 - The captured native fault is in `BlueAsyncRes::PrepareAsync` at
   `blue.dll+0x1b969`. It iterates the resource notify-target pointer array and
