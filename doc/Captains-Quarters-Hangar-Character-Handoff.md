@@ -1,10 +1,9 @@
 # Captain's Quarters, hangar and character handoff
 
-Status: investigation in progress. The reported client remains usable in the
-station, but entering Captain's Quarters leaves a `LOADING` display and the
-player can leave that view. Walking in stations is **not verified as working**.
-Do not advertise it as implemented or treat a successful character-creation
-screen as a successful station-interior test.
+Status: the Crucible character-selection regression has a fix deployed to
+`192.168.1.158`; post-fix in-game confirmation is pending because the isolated
+test prefix presents the EULA. Captain's Quarters can still remain on `LOADING`,
+and walking in stations is **not verified as working**.
 
 ## Environment and symptoms
 
@@ -21,6 +20,24 @@ screen as a successful station-interior test.
   which reports `192.168.1.158`, status `OK`, and zero players. It showed the
   EULA; the test process exited without accepting it. Do not accept the EULA
   on the user's behalf.
+- On 2026-11-04, an authenticated Crucible run reached character creation and
+  called `CreateCharacterWithDoll`, then `SelectCharacterID`. The server
+  returned the new character, but the client raised
+  `ViewStateError: There is not a valid transition from charactercreation to
+  charactercreation` from `GameUI::GoCharacterCreation`; its process then
+  exited with a CCP minidump. This localizes the reproduced failure to the
+  character-selection/session handoff.
+- Commit `574b9e0f` cleared `shipid` in both `Client::InitSession` and
+  `Client::UpdateSession` for docked characters. The earlier server code set
+  the active ship in station sessions, which Crucible needs to load the ship
+  hangar and complete that view handoff. Commit `318e3496` restores
+  `SetInt("shipid", m_shipId)` in both paths. The change compiled locally and
+  in the remote Docker image, was pushed, and is deployed on the SSH server.
+- The remote `evemu-server` container was recreated with `--no-deps`; the
+  `evemu-db` container was not restarted and remains healthy. A post-deploy
+  client run reached the EULA in the isolated test prefix, which was left
+  unaccepted, so the corrected character-selection path still needs a game
+  session to verify it.
 - A direct launch temporarily selected Proton 7 for the installed prefix. It
   was migrated back using Proton Experimental 11's `wineboot -u`; the prefix
   compatibility version reads `11.0-100`. No account was logged in through
@@ -43,18 +60,12 @@ screen as a successful station-interior test.
   list contains Wine components. This is evidence of where the client crashed,
   not proof that Wine, a graphic asset, a character model, or a server response
   caused it. The minidump alone does not contain a useful symbolized stack.
-- The SSH checkout is now at `b0079055`. It was fast-forwarded from
-  `f221c498`; the commits in between changed only this investigation and its
-  test launcher, so the running server image did not need a rebuild or
-  restart. The container remains up with a healthy database and reports
-  client version `7.31`. During an earlier quarters entry, the client reached
+- The SSH checkout is now at `318e3496`; the server container is running with
+  the healthy database. During an earlier quarters entry, the client reached
   `UpdateCQMainScreen`; its news ticker then raised an SSL handshake error
   after a redirect to `www.eveonline.com`. The client continued running, so
   this is an observed error, not a proven cause of a stuck scene.
-- `Client::InitSession` and `Client::UpdateSession` both clear `shipid` while
-  docked and set `worldspaceid` to the station ID. The current source matches
-  the expected station session and should not be reverted without a new
-  reproduction. The startup `GetCharSelectInfo` query returns `0` for
+- The startup `GetCharSelectInfo` query returns `0` for
   `worldSpaceID` so the selection screen does not claim the character is
   already walking in a station.
 - A separate launch with Proton Experimental 11 ended in an access violation
